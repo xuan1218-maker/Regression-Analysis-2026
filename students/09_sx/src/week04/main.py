@@ -113,25 +113,6 @@ def main():
     print("-" * 55)
     for name, metrics in results_high.items():
         print(f"{name:<35} {metrics['Time']:<15.4f} {metrics['MSE']:<15.6f}")
-    
-    print("\n" + "="*80)
-    print("思考题解答")
-    print("="*80)
-    print("""
-1. 在高维场景下，哪个API崩溃了或极其缓慢？
-   Statsmodels OLS 表现最慢。因为其需要计算完整的统计推断，
-   且使用解析解需要求 (X^T X) 的逆矩阵，复杂度 O(P^3)，
-   当 P=2000 时计算量巨大。
-
-2. 为什么SGDRegressor能在极短时间内完成任务？
-   - 避免矩阵求逆，每次迭代只需 O(N*P) 计算梯度
-   - 内存需求 O(P) 而非 O(P^2)
-   - 线性回归损失函数是凸函数，梯度下降能快速收敛
-   - 牺牲少量精度换取巨大的速度提升
-    """)
-    
-    print("\n" + "="*80)
-
 
 if __name__ == "__main__":
     main()
