@@ -1,0 +1,481 @@
+Project Path: week05
+
+Source Tree:
+
+```txt
+week05
+├── analysis.py
+├── covariance_ellipses.png
+├── data_generator.py
+├── main.py
+├── prompt.txt
+└── simulation.py
+
+```
+
+`analysis.py`:
+
+```py
+"""
+架构说明：表现层与验证层。将数值转化为学术洞察。
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def verify_covariance_matrix(X: np.ndarray, beta_samples: np.ndarray, sigma: float):
+    """
+    任务：将 1000 次模拟产生的"经验协方差"与公式推导出的"理论协方差"进行对齐。
+    在控制台打印这两个矩阵。
+    """
+    # 1. 计算理论协方差矩阵：σ² (X^T X)^{-1}
+    XTX = X.T @ X
+    theoretical_cov = sigma**2 * np.linalg.inv(XTX)
+
+    # 2. 计算经验协方差矩阵：基于1000次模拟的样本协方差
+    # beta_samples shape: (n_simulations, 2)，转置后np.cov按行计算变量
+    empirical_cov = np.cov(beta_samples.T)
+
+    # 格式化打印两个矩阵
+    print("=" * 70)
+    print("理论协方差矩阵 (Theoretical Covariance Matrix):")
+    print(np.array2string(theoretical_cov, precision=4, suppress_small=True))
+    print("\n经验协方差矩阵 (Empirical Covariance Matrix):")
+    print(np.array2string(empirical_cov, precision=4, suppress_small=True))
+    print("=" * 70)
+
+    return theoretical_cov, empirical_cov
+
+
+def plot_covariance_ellipses(
+    beta_samples_ortho: np.ndarray, beta_samples_coll: np.ndarray, true_beta: np.ndarray
+):
+    """
+    任务：将正交特征 (rho=0) 和共线特征 (rho=0.99) 的估计结果画在同一张 2D 散点图上。
+    """
+    # 设置绘图风格
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(10, 8), dpi=150)
+
+    # 绘制实验A（正交特征，ρ=0.0）：蓝色，透明度0.6
+    ax.scatter(
+        beta_samples_ortho[:, 0],
+        beta_samples_ortho[:, 1],
+        color="#1f77b4",
+        alpha=0.6,
+        label="Experiment A (Orthogonal Features, ρ=0.0)",
+        s=15,
+    )
+
+    # 绘制实验B（高度共线，ρ=0.99）：红色，透明度0.6
+    ax.scatter(
+        beta_samples_coll[:, 0],
+        beta_samples_coll[:, 1],
+        color="#ff4b5c",
+        alpha=0.6,
+        label="Experiment B (Highly Collinear, ρ=0.99)",
+        s=15,
+    )
+
+    # 标记真实参数β的靶心位置（黑色星标）
+    ax.scatter(
+        true_beta[0],
+        true_beta[1],
+        color="black",
+        marker="*",
+        s=200,
+        label=f"True Parameters β = [{true_beta[0]}, {true_beta[1]}]",
+        zorder=5,
+    )
+
+    # 坐标轴与标题设置
+    ax.set_xlabel(r"$\hat{\beta}_1$", fontsize=12)
+    ax.set_ylabel(r"$\hat{\beta}_2$", fontsize=12)
+    ax.set_title(
+        "Impact of Multicollinearity on Parameter Estimation Variance: Orthogonal vs Collinear",
+        fontsize=14,
+        pad=15,
+    )
+    ax.legend(fontsize=10)
+
+    # 强制坐标轴等比例，保证椭圆形状真实反映协方差结构
+    ax.axis("equal")
+
+    # 保存图片
+    plt.savefig("covariance_ellipses.png", bbox_inches="tight", dpi=150)
+    plt.close(fig)
+
+```
+
+`data_generator.py`:
+
+```py
+"""
+架构说明：本模块只负责"上帝视角"的数据生成。
+核心要求：必须将"固定设计矩阵 (Fixed X)"与"动态噪音 (Epsilon)"严格分离！
+"""
+
+import numpy as np
+
+
+def generate_fixed_design_matrix(
+    n_samples: int, rho: float, rng: np.random.Generator
+) -> np.ndarray:
+    """
+    任务：生成两列特征 X1 和 X2。要求它们之间的相关系数为rho。
+    提示：可以使用正态分布生成 Z1，Z2，然后通过线性组合构造所需的共线性
+    """
+    # 生成两个独立的标准正态变量
+    z1 = rng.normal(loc=0, scale=1, size=n_samples)
+    z2 = rng.normal(loc=0, scale=1, size=n_samples)
+
+    # 构造相关变量：X1 = z1, X2 = rho*z1 + sqrt(1-rho²)*z2，保证相关系数严格为rho
+    x1 = z1
+    x2 = rho * z1 + np.sqrt(1 - rho**2) * z2
+
+    # 构造设计矩阵（两列特征，无截距项，拟合时自动处理）
+    X = np.column_stack([x1, x2])
+    return X
+
+
+def generate_dynamic_response(
+    X: np.ndarray, true_beta: np.ndarray, sigma: float, rng: np.random.Generator
+) -> np.ndarray:
+    """
+    任务：基于传入的固定 X，生成一次带随机噪音的 y。
+    注意：每次调用此函数，返回的 y 应该都不同，因为噪音不同。
+    """
+    # 线性模型：y = X @ true_beta + ε，ε ~ N(0, σ²)
+    epsilon = rng.normal(loc=0, scale=sigma, size=X.shape[0])
+    y = X @ true_beta + epsilon
+    return y
+
+```
+
+`main.py`:
+
+```py
+"""
+架构说明：整个工程的调度中心。
+所有超参数（如模拟次数、真实参数）都必须作为全局常量在这里定义
+"""
+
+import numpy as np
+
+# 导入自定义模块
+from data_generator import generate_fixed_design_matrix
+from simulation import run_monte_carlo
+from analysis import verify_covariance_matrix, plot_covariance_ellipses
+
+
+def main():
+    # --- 全局实验配置 (Configuration) ---
+    N_SAMPLES = 100  # 样本量
+    N_SIMULATIONS = 1000  # 蒙特卡洛模拟次数
+    TRUE_BETA = np.array([5.0, 3.0])  # 真实参数β
+    SIGMA = 2.0  # 噪音标准差σ
+    RNG = np.random.default_rng(seed=2026)  # 固定随机种子，保证可复现
+
+    # --- 实验 A: 正交特征 rho = 0.0 ---
+    print(">>> 启动实验 A (正交特征)...")
+    # 1. 生成固定的设计矩阵X（仅生成1次，后续模拟保持不变）
+    X_ortho = generate_fixed_design_matrix(N_SAMPLES, rho=0.0, rng=RNG)
+    # 2. 执行蒙特卡洛模拟，收集1000次β估计值
+    beta_samples_ortho = run_monte_carlo(X_ortho, TRUE_BETA, SIGMA, N_SIMULATIONS, RNG)
+    # 3. 验证理论与经验协方差矩阵对齐
+    print("\n>>> 实验A 协方差矩阵验证：")
+    verify_covariance_matrix(X_ortho, beta_samples_ortho, SIGMA)
+
+    # --- 实验 B: 多重共线性 rho = 0.99 ---
+    print("\n>>> 启动实验 B (共线特征)...")
+    # 1. 生成高度共线的固定设计矩阵X
+    X_coll = generate_fixed_design_matrix(N_SAMPLES, rho=0.99, rng=RNG)
+    # 2. 执行蒙特卡洛模拟，收集1000次β估计值
+    beta_samples_coll = run_monte_carlo(X_coll, TRUE_BETA, SIGMA, N_SIMULATIONS, RNG)
+    # 3. 验证理论与经验协方差矩阵对齐
+    print("\n>>> 实验B 协方差矩阵验证：")
+    verify_covariance_matrix(X_coll, beta_samples_coll, SIGMA)
+
+    # --- 可视化 ---
+    print("\n>>> 绘制协方差矩阵的具象化散点图...")
+    # 绘制对比散点图，保存为png
+    plot_covariance_ellipses(beta_samples_ortho, beta_samples_coll, TRUE_BETA)
+    print(">>> 图表已保存为 covariance_ellipses.png！")
+
+
+if __name__ == "__main__":
+    main()
+
+```
+
+`prompt.txt`:
+
+```txt
+Project Path: week05
+
+Source Tree:
+
+```txt
+week05
+├── analysis.py
+├── data_generator.py
+├── main.py
+└── simulation.py
+
+```
+
+`analysis.py`:
+
+```py
+"""
+架构说明：表现层与验证层。将数值转化为学术洞察。
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def verify_covariance_matrix(X: np.ndarray, beta_samples: np.ndarray, sigma: float):
+    """
+    任务：将 1000 次模拟产生的"经验协方差"与公式推导出的"理论协方差"进行对齐。
+    必须在控制台打印这两个矩阵。
+    """
+    # 1. 计算理论协方差矩阵：σ² (X^T X)^{-1}
+    XTX = X.T @ X
+    theoretical_cov = sigma**2 * np.linalg.inv(XTX)
+    
+    # 2. 计算经验协方差矩阵：基于1000次模拟的样本协方差
+    # beta_samples shape: (n_simulations, 2)，转置后np.cov按行计算变量
+    empirical_cov = np.cov(beta_samples.T)
+    
+    # 格式化打印两个矩阵
+    print("=" * 70)
+    print("理论协方差矩阵 (Theoretical Covariance Matrix):")
+    print(np.array2string(theoretical_cov, precision=4, suppress_small=True))
+    print("\n经验协方差矩阵 (Empirical Covariance Matrix):")
+    print(np.array2string(empirical_cov, precision=4, suppress_small=True))
+    print("=" * 70)
+    
+    return theoretical_cov, empirical_cov
+
+
+def plot_covariance_ellipses(beta_samples_ortho: np.ndarray, beta_samples_coll: np.ndarray, true_beta: np.ndarray):
+    """
+    任务：将正交特征 (rho=0) 和共线特征 (rho=0.99) 的估计结果画在同一张 2D 散点图上。
+    要求：
+    - 使用不同的颜色和透明度 (alpha)。
+    - 必须标记出真实的 Beta 靶心位置。
+    - 保存为 png 图片，绝不能阻塞程序运行。
+    """
+    # 设置绘图风格
+    plt.style.use('seaborn-v0_8-whitegrid')
+    fig, ax = plt.subplots(figsize=(10, 8), dpi=150)
+    
+    # 绘制实验A（正交特征，ρ=0.0）：蓝色，透明度0.6
+    ax.scatter(
+        beta_samples_ortho[:, 0], beta_samples_ortho[:, 1],
+        color='#1f77b4', alpha=0.6, label='实验A (正交特征, ρ=0.0)', s=15
+    )
+    
+    # 绘制实验B（高度共线，ρ=0.99）：红色，透明度0.6
+    ax.scatter(
+        beta_samples_coll[:, 0], beta_samples_coll[:, 1],
+        color='#ff4b5c', alpha=0.6, label='实验B (高度共线, ρ=0.99)', s=15
+    )
+    
+    # 标记真实参数β的靶心位置（黑色星标）
+    ax.scatter(
+        true_beta[0], true_beta[1], color='black', marker='*', s=200,
+        label=f'真实参数 β = [{true_beta[0]}, {true_beta[1]}]', zorder=5
+    )
+    
+    # 坐标轴与标题设置
+    ax.set_xlabel(r'$\hat{\beta}_1$', fontsize=12)
+    ax.set_ylabel(r'$\hat{\beta}_2$', fontsize=12)
+    ax.set_title('多重共线性对参数估计协方差的影响：正交 vs 共线', fontsize=14, pad=15)
+    ax.legend(fontsize=10)
+    
+    # 强制坐标轴等比例，保证椭圆形状真实反映协方差结构
+    ax.axis('equal')
+    
+    # 保存图片，不阻塞程序运行
+    plt.savefig('covariance_ellipses.png', bbox_inches='tight', dpi=150)
+    plt.close(fig)
+```
+
+`data_generator.py`:
+
+```py
+"""
+架构说明：本模块只负责"上帝视角"的数据生成。
+核心要求：必须将"固定设计矩阵 (Fixed X)"与"动态噪音 (Epsilon)"严格分离！
+"""
+import numpy as np
+
+
+def generate_fixed_design_matrix(n_samples: int, rho: float, rng: np.random.Generator) -> np.ndarray:
+    """
+    任务：生成两列特征 X1 和 X2。要求它们之间的相关系数为 rho。
+    提示：可以使用正态分布生成 Z1，Z2，然后通过线性组合 (Linear Combination) 构造所需的共线性
+    """
+    # 生成两个独立的标准正态变量
+    z1 = rng.normal(loc=0, scale=1, size=n_samples)
+    z2 = rng.normal(loc=0, scale=1, size=n_samples)
+    
+    # 构造相关变量：X1 = z1, X2 = rho*z1 + sqrt(1-rho²)*z2，保证相关系数严格为rho
+    x1 = z1
+    x2 = rho * z1 + np.sqrt(1 - rho**2) * z2
+    
+    # 构造设计矩阵（两列特征，无截距项，拟合时自动处理）
+    X = np.column_stack([x1, x2])
+    return X
+
+
+def generate_dynamic_response(X: np.ndarray, true_beta: np.ndarray, sigma: float, rng: np.random.Generator) -> np.ndarray:
+    """
+    任务：基于传入的固定 X，生成一次带随机噪音的 y。
+    注意：每次调用此函数，返回的 y 应该都不同（因为噪音不同）。
+    """
+    # 线性模型：y = X @ true_beta + ε，ε ~ N(0, σ²)
+    epsilon = rng.normal(loc=0, scale=sigma, size=X.shape[0])
+    y = X @ true_beta + epsilon
+    return y
+```
+
+`main.py`:
+
+```py
+"""
+架构说明：整个工程的调度中心。
+所有超参数（如模拟次数、真实参数）都必须作为全局常量在这里定义，不允许硬编码散落在其他文件里
+"""
+import numpy as np
+# 导入自定义模块
+from data_generator import generate_fixed_design_matrix
+from simulation import run_monte_carlo
+from analysis import verify_covariance_matrix, plot_covariance_ellipses
+
+
+def main():
+    # --- 全局实验配置 (Configuration) ---
+    N_SAMPLES = 100          # 样本量
+    N_SIMULATIONS = 1000     # 蒙特卡洛模拟次数
+    TRUE_BETA = np.array([5.0, 3.0])  # 真实参数β
+    SIGMA = 2.0              # 噪音标准差σ
+    RNG = np.random.default_rng(seed=2026)  # 固定随机种子，保证可复现
+
+    # --- 实验 A: 纯净的世界 (正交特征 rho = 0.0) ---
+    print(">>> 启动实验 A (正交特征)...")
+    # 1. 生成固定的设计矩阵X（仅生成1次，后续模拟保持不变）
+    X_ortho = generate_fixed_design_matrix(N_SAMPLES, rho=0.0, rng=RNG)
+    # 2. 执行蒙特卡洛模拟，收集1000次β估计值
+    beta_samples_ortho = run_monte_carlo(X_ortho, TRUE_BETA, SIGMA, N_SIMULATIONS, RNG)
+    # 3. 验证理论与经验协方差矩阵对齐
+    print("\n>>> 实验A 协方差矩阵验证：")
+    verify_covariance_matrix(X_ortho, beta_samples_ortho, SIGMA)
+
+    # --- 实验 B: 被诅咒的世界 (多重共线性 rho = 0.99) ---
+    print("\n>>> 启动实验 B (共线特征)...")
+    # 1. 生成高度共线的固定设计矩阵X
+    X_coll = generate_fixed_design_matrix(N_SAMPLES, rho=0.99, rng=RNG)
+    # 2. 执行蒙特卡洛模拟，收集1000次β估计值
+    beta_samples_coll = run_monte_carlo(X_coll, TRUE_BETA, SIGMA, N_SIMULATIONS, RNG)
+    # 3. 验证理论与经验协方差矩阵对齐
+    print("\n>>> 实验B 协方差矩阵验证：")
+    verify_covariance_matrix(X_coll, beta_samples_coll, SIGMA)
+
+    # --- 终极可视化 ---
+    print("\n>>> 绘制协方差矩阵的具象化散点图...")
+    # 绘制对比散点图，保存为png
+    plot_covariance_ellipses(beta_samples_ortho, beta_samples_coll, TRUE_BETA)
+    print(">>> 实验流水线执行完毕，图表已保存为 covariance_ellipses.png！")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+`simulation.py`:
+
+```py
+"""
+架构说明：这是蒙特卡洛模拟的心脏模块。
+核心难点：如何在 1000 次甚至 100000 次循环中，将算法的时间复杂度降到最低？
+"""
+import numpy as np
+from data_generator import generate_dynamic_response
+
+
+def run_monte_carlo(X: np.ndarray, true_beta: np.ndarray, sigma: float, n_simulations: int, rng: np.random.Generator) -> np.ndarray:
+    """
+    执行蒙特卡洛循环，收集所有的 \hat{\beta}。
+
+    我们在之前说过"求解参数必须用 `solve` 而非 `inv`"。
+    如果在 for 循环里写 `np.linalg.solve(X.T @ X, X.T @ y)`，会导致每次循环都重新分解一遍 X^T X。
+
+    【性能优化】：将所有"不随循环改变的计算"提取到循环外部！
+    预计算投影矩阵 (X^T X)^{-1} X^T，循环内仅需矩阵乘法，大幅提升效率
+    """
+    # --- 循环外预计算（仅执行1次，不随循环变化）---
+    XTX = X.T @ X  # X^T X
+    XT = X.T       # X^T
+    # 预计算最小二乘投影矩阵：(X^T X)^{-1} X^T，用solve保证数值稳定性
+    proj_matrix = np.linalg.solve(XTX, XT)
+    
+    beta_samples = []
+
+    for _ in range(n_simulations):
+        # 1. 生成带随机噪音的响应变量y
+        y = generate_dynamic_response(X, true_beta, sigma, rng)
+        
+        # 2. 利用预计算的投影矩阵，快速计算beta_hat = proj_matrix @ y
+        beta_hat = proj_matrix @ y
+        
+        # 3. 保存本次估计结果
+        beta_samples.append(beta_hat)
+
+    return np.array(beta_samples)
+```
+```
+
+`simulation.py`:
+
+```py
+"""
+架构说明：这是蒙特卡洛模拟的心脏模块。
+核心难点：如何在 1000 次甚至 100000 次循环中，将算法的时间复杂度降到最低？
+"""
+
+import numpy as np
+from data_generator import generate_dynamic_response
+
+
+def run_monte_carlo(
+    X: np.ndarray,
+    true_beta: np.ndarray,
+    sigma: float,
+    n_simulations: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+
+    # --- 循环外预计算（仅执行1次，不随循环变化）---
+    XTX = X.T @ X  # X^T X
+    XT = X.T  # X^T
+    # 预计算最小二乘投影矩阵：(X^T X)^{-1} X^T，用solve保证数值稳定性
+    proj_matrix = np.linalg.solve(XTX, XT)
+
+    beta_samples = []
+
+    for _ in range(n_simulations):
+        # 1. 生成带随机噪音的响应变量y
+        y = generate_dynamic_response(X, true_beta, sigma, rng)
+
+        # 2. 利用预计算的投影矩阵，快速计算beta_hat = proj_matrix @ y
+        beta_hat = proj_matrix @ y
+
+        # 3. 保存本次估计结果
+        beta_samples.append(beta_hat)
+
+    return np.array(beta_samples)
+
+```
