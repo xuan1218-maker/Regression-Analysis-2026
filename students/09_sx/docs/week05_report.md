@@ -57,8 +57,7 @@
 
 ### 3.2 散点图
 
-![covariance_scatter](/home/xuan/Regression-Analysis-2026/students/09_sx/src/week05/covariance_scatter.png)
-
+![covariance_scatter](../src/week05/covariance_scatter.png)
 **图形特征：**
 
 - **蓝色点（ρ = 0）**：呈近似圆形分布，β̂₁ 与 β̂₂ 几乎不相关
@@ -135,10 +134,15 @@ Var(β̂) = σ² (XᵀX)⁻¹
 
 ## 七、文件结构
 /home/xuan/Regression-Analysis-2026/students/09_sx/src/week05/
+
 data_generator.py # 生成设计矩阵
+
 simulation.py # 蒙特卡洛模拟
+
 analysis.py # 可视化
+
 main.py # 主程序
+
 covariance_scatter.png # 输出图片
 
 ---
