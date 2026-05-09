@@ -1,0 +1,26 @@
+# macOS specific files
+.DS_Store
+
+# Common file types to ignore
+*.pdf
+
+# Python virtual environment folders
+**/.venv/
+**/venv/
+**/env/
+**/.env/
+
+# Python caches and runtime files
+**/__pycache__/
+
+# Jupyter Notebook checkpoints folder
+**/.ipynb_checkpoints/
+
+# uv lock file
+**/uv.lock
+
+# Jupyter Notebook files (recursive)
+**/*.ipynb
+
+**/*.npz
+
