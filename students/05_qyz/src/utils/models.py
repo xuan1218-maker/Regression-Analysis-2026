@@ -1,33 +1,17 @@
 """
 Module: utils.models
 Purpose: Core machine learning estimators for regression.
-
-包含：
-1. AnalyticalOLS - 解析解最小二乘（正规方程）
-2. GradientDescentOLS - 梯度下降优化器（数值优化）
 """
 
 import numpy as np
 from scipy import stats
-from typing import Dict, List, Optional
+from typing import Dict
 
 
 class AnalyticalOLS:
-    """
-    解析解 OLS 回归模型
-    使用正规方程: β̂ = (XᵀX)⁻¹ Xᵀ y
-    包含完整的统计推断功能
-    """
+    """解析解 OLS 回归模型"""
 
     def __init__(self, fit_intercept: bool = True):
-        """
-        初始化模型
-
-        Parameters:
-        -----------
-        fit_intercept : bool
-            是否添加截距项（默认True）
-        """
         self.fit_intercept = fit_intercept
         self.coef_ = None
         self.cov_matrix_ = None
@@ -38,72 +22,45 @@ class AnalyticalOLS:
         self._X_design = None
 
     def _add_intercept(self, X: np.ndarray) -> np.ndarray:
-        """添加截距列（全1列）"""
         if not self.fit_intercept:
             return X
         n = X.shape[0]
         return np.column_stack([np.ones(n), X])
 
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """
-        拟合模型，计算 β̂, σ̂², 协方差矩阵
-
-        Parameters:
-        -----------
-        X : np.ndarray
-            特征矩阵，shape (n_samples, n_features)
-        y : np.ndarray
-            目标变量，shape (n_samples,)
-
-        Returns:
-        --------
-        self : 返回自身，支持链式调用
-        """
-        # 添加截距项
         X_design = self._add_intercept(X)
         self._X_design = X_design
-
         n, p = X_design.shape
 
-        # 1. 计算 β̂ = (XᵀX)⁻¹ Xᵀ y
         XtX = X_design.T @ X_design
         XtX_inv = np.linalg.inv(XtX)
         XtY = X_design.T @ y
         self.coef_ = XtX_inv @ XtY
 
-        # 2. 计算预测值和残差
         self.fitted_values_ = X_design @ self.coef_
         self.residuals_ = y - self.fitted_values_
 
-        # 3. 计算 σ̂² (误差方差的无偏估计)
-        RSS = np.sum(self.residuals_**2)
+        RSS = np.sum(self.residuals_ ** 2)
         self.df_resid_ = n - p
         self.sigma2_ = RSS / self.df_resid_
-
-        # 4. 计算系数协方差矩阵
         self.cov_matrix_ = self.sigma2_ * XtX_inv
-
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """生成预测值 ŷ = Xβ̂"""
         if self.coef_ is None:
-            raise RuntimeError("必须先调用 fit() 训练模型")
+            raise RuntimeError("必须先调用 fit()")
         X_design = self._add_intercept(X)
         return X_design @ self.coef_
 
     def score(self, X: np.ndarray, y: np.ndarray) -> float:
-        """计算 R² 拟合优度"""
         y_pred = self.predict(X)
         SSE = np.sum((y - y_pred) ** 2)
         SST = np.sum((y - np.mean(y)) ** 2)
         return 1 - SSE / SST
 
     def f_test(self, C: np.ndarray, d: np.ndarray) -> Dict[str, float]:
-        """执行一般线性假设检验 H₀: Cβ = d"""
         if self.coef_ is None:
-            raise RuntimeError("必须先调用 fit() 训练模型")
-
+            raise RuntimeError("必须先调用 fit()")
         C = np.asarray(C)
         d = np.asarray(d).reshape(-1, 1)
         q = C.shape[0]
@@ -120,23 +77,12 @@ class AnalyticalOLS:
         quad_form = diff.T @ C_XtX_inv_Ct_inv @ diff
         f_stat = quad_form.item() / (q * self.sigma2_)
         p_value = 1 - stats.f.cdf(f_stat, q, self.df_resid_)
-
         return {"f_stat": f_stat, "p_value": p_value}
 
 
 class GradientDescentOLS:
-    """
-    梯度下降 OLS 回归模型
-    使用数值优化方法求解: β̂ = argmin MSE(y, Xβ)
-    
-    超参数:
-    - learning_rate: 学习率（步长）
-    - tol: 收敛阈值，loss 变化小于该值时提前停止
-    - max_iter: 最大迭代次数
-    - gd_type: "full_batch" 或 "mini_batch"
-    - batch_fraction: mini_batch 时，每次使用的样本比例
-    """
-    
+    """梯度下降 OLS 回归模型"""
+
     def __init__(
         self,
         learning_rate: float = 0.01,
@@ -152,65 +98,37 @@ class GradientDescentOLS:
         self.gd_type = gd_type
         self.batch_fraction = batch_fraction
         self.fit_intercept = fit_intercept
-        
+
         self.coef_ = None
         self.loss_history_ = []
         self._X_design = None
-        
+
     def _add_intercept(self, X: np.ndarray) -> np.ndarray:
-        """添加截距列（全1列）"""
         if not self.fit_intercept:
             return X
         n = X.shape[0]
         return np.column_stack([np.ones(n), X])
-    
+
     def _compute_mse(self, X: np.ndarray, y: np.ndarray) -> float:
-        """计算均方误差 MSE = (1/n) Σ(y_i - ŷ_i)²"""
         y_pred = X @ self.coef_
         return np.mean((y - y_pred) ** 2)
-    
+
     def _compute_gradient(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        """
-        计算梯度: ∇L = (2/n) Xᵀ (Xβ - y)
-        
-        推导：
-        L = (1/n) Σ (y_i - x_iβ)²
-        ∂L/∂β = (2/n) Σ (x_iβ - y_i) x_i = (2/n) Xᵀ (Xβ - y)
-        """
         n = X.shape[0]
         y_pred = X @ self.coef_
         error = y_pred - y
-        gradient = (2 / n) * (X.T @ error)
-        return gradient
-    
-    def fit(self, X: np.ndarray, y: np.ndarray, seed: int = 42):
-        """
-        使用梯度下降拟合模型
-        
-        Parameters:
-        -----------
-        X : np.ndarray
-            特征矩阵（不含截距）
-        y : np.ndarray
-            目标变量
-        seed : int
-            随机种子，保证可复现
-            
-        Returns:
-        --------
-        self : 返回自身
-        """
+        return (2 / n) * (X.T @ error)
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """使用梯度下降拟合模型"""
         # 添加截距
         X_design = self._add_intercept(X)
         n_samples, n_features = X_design.shape
-        
+
         # 初始化系数为 0
         self.coef_ = np.zeros(n_features)
         self.loss_history_ = []
-        
-        # 设置随机数生成器
-        rng = np.random.default_rng(seed)
-        
+
         # 确定 batch 大小
         if self.gd_type == "full_batch":
             batch_size = n_samples
@@ -218,49 +136,48 @@ class GradientDescentOLS:
             batch_size = max(1, int(n_samples * self.batch_fraction))
         else:
             raise ValueError("gd_type 必须是 'full_batch' 或 'mini_batch'")
-        
+
         print(f"开始训练: {self.gd_type}, batch_size={batch_size}")
-        
+
         # 梯度下降迭代
         for epoch in range(self.max_iter):
             # 1. 采样（如果是 mini_batch）
             if self.gd_type == "mini_batch":
-                indices = rng.choice(n_samples, size=batch_size, replace=False)
+                # 随机采样
+                indices = np.random.choice(n_samples, size=batch_size, replace=False)
                 X_batch = X_design[indices]
                 y_batch = y[indices]
             else:
                 X_batch = X_design
                 y_batch = y
-            
+
             # 2. 计算梯度
             gradient = self._compute_gradient(X_batch, y_batch)
-            
+
             # 3. 更新回归系数
             self.coef_ -= self.learning_rate * gradient
-            
+
             # 4. 记录本轮 loss（使用全量数据）
             current_loss = self._compute_mse(X_design, y)
             self.loss_history_.append(current_loss)
-            
+
             # 5. 检查收敛
-            if epoch > 0:
-                loss_change = abs(self.loss_history_[-1] - self.loss_history_[-2])
-                if loss_change < self.tol:
-                    print(f"收敛于第 {epoch} 轮，loss 变化 = {loss_change:.2e}")
+            if epoch > 50:
+                rel_loss_change = abs(self.loss_history_[-1] - self.loss_history_[-2]) / (abs(self.loss_history_[-2]) + 1e-8)
+                if rel_loss_change < self.tol:
+                    print(f"收敛于第 {epoch} 轮，loss 相对变化 = {rel_loss_change:.2e}")
                     break
-        
+
         print(f"训练完成: 共 {len(self.loss_history_)} 轮，最终 loss = {self.loss_history_[-1]:.6f}")
         return self
-    
+
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """生成预测值 ŷ = Xβ̂"""
         if self.coef_ is None:
-            raise RuntimeError("必须先调用 fit() 训练模型")
+            raise RuntimeError("必须先调用 fit()")
         X_design = self._add_intercept(X)
         return X_design @ self.coef_
-    
+
     def score(self, X: np.ndarray, y: np.ndarray) -> float:
-        """计算 R² 拟合优度"""
         y_pred = self.predict(X)
         SSE = np.sum((y - y_pred) ** 2)
         SST = np.sum((y - np.mean(y)) ** 2)

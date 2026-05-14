@@ -1,0 +1,15 @@
+
+# 忽略数据文件
+*.csv
+*.xlsx
+*.xls
+
+# 忽略 week09 和 week10 的 data 文件夹
+src/week09/data/
+src/week10/data/
+
+# 忽略项目根目录下的数据文件夹
+data/
+
+# 忽略 week10 milestone2 的结果文件
+src/week10/milestone2/results/

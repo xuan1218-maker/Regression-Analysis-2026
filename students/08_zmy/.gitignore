@@ -10,7 +10,7 @@ __pycache__/
 venv/
 
 # Generated results (optional, but you can keep them if you want to show)
-results/
+# results/
 
 # Ruff cache
 .ruff_cache/
