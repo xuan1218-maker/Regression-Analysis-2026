@@ -9,3 +9,12 @@ results/
 **/data/*.csv
 
 .vscode/
+# data
+src/week09/data/
+
+# results
+results/
+
+# generated files
+*.csv
+*.png
