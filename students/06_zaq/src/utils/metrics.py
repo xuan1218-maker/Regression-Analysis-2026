@@ -1,41 +1,29 @@
 """
 Module: utils.metrics
-Purpose: Core evaluation metrics (RMSE, MAE, MAPE)
+Purpose: Evaluation metrics
 """
-import numpy as np
+import math
 
 
 def calculate_rmse(y_true, y_pred):
-    """
-    Root Mean Square Error
-    RMSE = sqrt(mean((y_true - y_pred)^2))
-    """
-    return np.sqrt(np.mean((y_true - y_pred) ** 2))
+    """Root Mean Square Error"""
+    n = len(y_true)
+    return math.sqrt(sum((y_true[i] - y_pred[i])**2 for i in range(n)) / n)
 
 
 def calculate_mae(y_true, y_pred):
-    """
-    Mean Absolute Error
-    MAE = mean(|y_true - y_pred|)
-    """
-    return np.mean(np.abs(y_true - y_pred))
+    """Mean Absolute Error"""
+    n = len(y_true)
+    return sum(abs(y_true[i] - y_pred[i]) for i in range(n)) / n
 
 
 def calculate_mape(y_true, y_pred, eps=1e-8):
-    """
-    Mean Absolute Percentage Error
-    MAPE = mean(|(y_true - y_pred) / y_true|) * 100
-    
-    Args:
-        eps: 避免除以 0 的小常数
-    """
-    # 避免分母为 0
-    y_true_safe = np.where(np.abs(y_true) < eps, eps, y_true)
-    return np.mean(np.abs((y_true - y_pred) / y_true_safe)) * 100
+    """Mean Absolute Percentage Error"""
+    n = len(y_true)
+    return 100 * sum(abs((y_true[i] - y_pred[i]) / max(abs(y_true[i]), eps)) for i in range(n)) / n
 
 
 def calculate_all_metrics(y_true, y_pred):
-    """一次性计算所有指标"""
     return {
         "RMSE": calculate_rmse(y_true, y_pred),
         "MAE": calculate_mae(y_true, y_pred),

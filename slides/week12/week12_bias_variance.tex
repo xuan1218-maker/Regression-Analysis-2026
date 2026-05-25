@@ -1,0 +1,267 @@
+\documentclass[aspectratio=169,professionalfonts]{beamer}
+
+% Compile with XeLaTeX.
+% Example:
+%   xelatex -output-directory slides/week12 slides/week12/week12_bias_variance.tex
+
+\usetheme{Madrid}
+\usefonttheme{serif}
+
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+% English fonts
+\IfFontExistsTF{TeX Gyre Pagella}{\setmainfont{TeX Gyre Pagella}}{}
+\IfFontExistsTF{TeX Gyre Heros}{\setsansfont{TeX Gyre Heros}}{}
+\IfFontExistsTF{Menlo}{\setmonofont{Menlo}}{}
+
+% Chinese fonts
+% Body text: Kai-style fonts
+\IfFontExistsTF{Kaiti SC}{\setCJKmainfont{Kaiti SC}}{%
+  \IfFontExistsTF{STKaiti}{\setCJKmainfont{STKaiti}}{%
+    \IfFontExistsTF{KaiTi}{\setCJKmainfont{KaiTi}}{%
+      \IfFontExistsTF{Songti SC}{\setCJKmainfont{Songti SC}}{}%
+    }%
+  }%
+}
+
+% Title text: Xingkai-style fonts; fallback to Kaiti-style fonts if unavailable
+\IfFontExistsTF{Xingkai SC}{\setCJKsansfont{Xingkai SC}}{%
+  \IfFontExistsTF{STXingkai}{\setCJKsansfont{STXingkai}}{%
+    \IfFontExistsTF{Kaiti SC}{\setCJKsansfont{Kaiti SC}}{%
+      \IfFontExistsTF{STKaiti}{\setCJKsansfont{STKaiti}}{}%
+    }%
+  }%
+}
+
+% Avoid xeCJK warnings for monospaced CJK fallback
+\IfFontExistsTF{Kaiti SC}{\setCJKmonofont{Kaiti SC}}{%
+  \IfFontExistsTF{STKaiti}{\setCJKmonofont{STKaiti}}{%
+    \IfFontExistsTF{Songti SC}{\setCJKmonofont{Songti SC}}{}%
+  }%
+}
+
+% Let title-like elements use the sans family, so Chinese titles follow the Xingkai setting.
+\setbeamerfont{title}{family=\sffamily,series=\mdseries}
+\setbeamerfont{subtitle}{family=\sffamily,series=\mdseries}
+\setbeamerfont{frametitle}{family=\sffamily,series=\mdseries}
+\setbeamerfont{section title}{family=\sffamily,series=\mdseries}
+
+\usepackage{amsmath, amssymb, bm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tikz}
+\usepackage{appendixnumberbeamer}
+
+% Metadata
+\title[第12周]{第12周：偏差-方差权衡与损失函数}
+\subtitle{Bias-Variance Tradeoff and Loss Functions}
+\author[课程组]{课程组}
+\institute[OUC]{中国海洋大学 \quad Regression Analysis 2026}
+\date{2026-05-22}
+
+% Short macros
+\newcommand{\WeekNo}{12}
+\newcommand{\TopicName}{Bias-Variance Tradeoff and Loss Functions}
+\newcommand{\CourseName}{Regression Analysis 2026}
+
+% Math shortcuts
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Bias}{\mathrm{Bias}}
+\newcommand{\MSE}{\mathrm{MSE}}
+\newcommand{\RMSE}{\mathrm{RMSE}}
+\newcommand{\MAE}{\mathrm{MAE}}
+\newcommand{\argmin}{\mathop{\mathrm{argmin}}}
+\newcommand{\lossfn}{\mathcal{L}}
+\newcommand{\regterm}{\Omega}
+
+\begin{document}
+
+\begin{frame}[plain]
+    \titlepage
+\end{frame}
+
+\begin{frame}{本讲导航}
+    \tableofcontents
+\end{frame}
+
+\section{学习目标}
+
+\begin{frame}{学习目标}
+    \begin{itemize}
+        \item 理解训练误差、测试误差与泛化误差之间的关系。
+        \item 理解 \textbf{bias-variance tradeoff} 为什么是模型选择的核心线索。
+        \item 能够比较 \textbf{RMSE} 与 \textbf{MAE} 的适用场景与局限。
+        \item 能够用“统计直觉 + 业务语言”解释为什么复杂模型不一定更好。
+    \end{itemize}
+\end{frame}
+
+\section{问题动机}
+
+\begin{frame}{为什么 OLS 还不够？}
+    \begin{block}{典型困惑}
+        为什么模型在训练集上表现越来越好，但在新数据上的效果反而下降？
+    \end{block}
+
+    \vspace{0.5em}
+    \begin{itemize}
+        \item 训练误差只回答：模型有没有把已有样本拟合好。
+        \item 我们真正关心的是：模型能否推广到未见数据。
+        \item 因此，\textbf{泛化能力} 比单纯的拟合能力更重要。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{本讲的中心判断}
+    \begin{alertblock}{Takeaway}
+        模型选择不是一味追求更低的训练误差，而是在 \textbf{偏差、方差与泛化能力} 之间做权衡。
+    \end{alertblock}
+\end{frame}
+
+\section{泛化误差与偏差-方差权衡}
+
+\begin{frame}{三类误差}
+    \begin{table}
+        \centering
+        \begin{tabular}{>{\raggedright\arraybackslash}p{0.2\linewidth} >{\raggedright\arraybackslash}p{0.32\linewidth} >{\raggedright\arraybackslash}p{0.34\linewidth}}
+            \toprule
+            概念 & 关注对象 & 解释 \\
+            \midrule
+            训练误差 & 已见样本 & 模型对训练集的拟合程度 \\
+            测试误差 & 未见样本 & 模型对新数据的预测表现 \\
+            泛化误差 & 数据分布 & 模型在总体上的期望误差 \\
+            \bottomrule
+        \end{tabular}
+    \end{table}
+\end{frame}
+
+\begin{frame}{偏差-方差分解的直觉}
+    \begin{block}{核心图像}
+        \[
+            \MSE \approx \Bias^2 + \Var + \text{Noise}
+        \]
+    \end{block}
+
+    \begin{itemize}
+        \item \textbf{高偏差}：模型太简单，系统性偏离真实关系。
+        \item \textbf{高方差}：模型太敏感，不同训练样本会学出很不一样的结果。
+        \item 好模型并不是让某一项无限变小，而是控制两者的平衡。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{模型复杂度与误差曲线}
+    \begin{columns}[c,onlytextwidth]
+        \column{0.56\textwidth}
+        \fbox{%
+            \parbox[c][0.45\textheight][c]{0.95\linewidth}{
+                \centering
+                在此插入 bias-variance / train-test error 曲线图\\[0.6em]
+                推荐文件：\texttt{figures/bias\_variance\_curve.pdf}
+            }
+        }
+        \column{0.40\textwidth}
+        \begin{itemize}
+            \item 训练误差通常随复杂度上升而下降。
+            \item 测试误差常呈现先降后升。
+            \item 过拟合对应高方差，欠拟合对应高偏差。
+        \end{itemize}
+    \end{columns}
+\end{frame}
+
+\section{损失函数：RMSE vs MAE}
+
+\begin{frame}{常见回归损失函数}
+    \begin{block}{平方损失与绝对损失}
+        \[
+            \RMSE = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat y_i)^2}, \qquad
+            \MAE = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat y_i|
+        \]
+    \end{block}
+
+    \begin{itemize}
+        \item \textbf{RMSE} 更强调大误差，会放大离群点的影响。
+        \item \textbf{MAE} 更稳健，对异常值没有二次放大效应。
+        \item 两者不仅是计算公式不同，也代表了不同的建模偏好。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{RMSE 与 MAE 的比较}
+    \small
+    \begin{table}
+        \centering
+        \begin{tabular}{>{\raggedright\arraybackslash}p{0.18\linewidth} >{\raggedright\arraybackslash}p{0.28\linewidth} >{\raggedright\arraybackslash}p{0.22\linewidth} >{\raggedright\arraybackslash}p{0.22\linewidth}}
+            \toprule
+            指标 & 对大误差的反应 & 优点 & 风险 / 局限 \\
+            \midrule
+            RMSE & 二次放大 & 对严重误差更敏感；数学上更平滑 & 容易被异常值主导 \\
+            MAE & 线性增加 & 更稳健；解释为平均绝对偏差更直观 & 对极端误差惩罚较弱 \\
+            \bottomrule
+        \end{tabular}
+    \end{table}
+\end{frame}
+
+\begin{frame}{怎么选 RMSE 还是 MAE？}
+    \begin{itemize}
+        \item 如果你非常在意\textbf{大错不能犯}，通常更关心 \textbf{RMSE}。
+        \item 如果数据中存在明显异常值，或希望指标解释更稳健，通常更关心 \textbf{MAE}。
+        \item 指标的选择必须和业务后果绑定，而不是只看哪一个数字更好看。
+    \end{itemize}
+
+    \begin{exampleblock}{业务语言示例}
+        “如果模型偶尔出现很大的预测错误会造成严重损失，那么 RMSE 更能反映这种风险。”
+    \end{exampleblock}
+\end{frame}
+
+\section{课堂案例与讨论}
+
+\begin{frame}{课堂实验建议}
+    \begin{enumerate}
+        \item 用多项式回归生成不同复杂度模型。
+        \item 绘制训练误差与验证误差曲线。
+        \item 在数据中人为加入异常值，再比较 RMSE 和 MAE 的变化。
+        \item 讨论：如果只能向业务方展示一个指标，你会选哪一个？
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{讨论题}
+    \begin{block}{Discussion}
+        什么时候我们应该接受一个“更有偏但更稳定”的模型？
+    \end{block}
+
+    \begin{itemize}
+        \item 样本量小但模型很复杂时？
+        \item 特征很多、信号弱、容易过拟合时？
+        \item 业务上更担心线上波动而不是训练集表现时？
+    \end{itemize}
+\end{frame}
+
+\section{总结与作业}
+
+\begin{frame}{本讲小结}
+    \begin{enumerate}
+        \item 模型复杂度上升不一定带来更好的泛化能力。
+        \item 偏差-方差权衡是理解欠拟合、过拟合和模型选择的主线。
+        \item RMSE 与 MAE 分别强调“惩罚大误差”和“稳健解释”两种不同取向。
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{课后练习建议}
+    \begin{itemize}
+        \item 练习 1：用一句话解释什么是泛化误差。
+        \item 练习 2：画出模型复杂度与训练/测试误差的示意图。
+        \item 练习 3：构造一个含异常值的数据例子，比较 RMSE 与 MAE 的差异。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+    \centering
+    \vspace{1.5cm}
+    {\usebeamerfont{title}\Huge Q\&A}
+
+    \vspace{1cm}
+    {\Large Thanks}
+\end{frame}
+
+\end{document}

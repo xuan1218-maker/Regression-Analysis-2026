@@ -1,0 +1,294 @@
+\documentclass[aspectratio=169,professionalfonts]{beamer}
+
+% Compile with XeLaTeX.
+% Example:
+%   xelatex slides/template/course_beamer_template.tex
+
+\usetheme{Madrid}
+\usefonttheme{serif}
+
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+% English fonts
+\IfFontExistsTF{TeX Gyre Pagella}{\setmainfont{TeX Gyre Pagella}}{}
+\IfFontExistsTF{TeX Gyre Heros}{\setsansfont{TeX Gyre Heros}}{}
+\IfFontExistsTF{Menlo}{\setmonofont{Menlo}}{}
+
+% Chinese fonts
+% Body text: Kai-style fonts
+\IfFontExistsTF{Kaiti SC}{\setCJKmainfont{Kaiti SC}}{%
+  \IfFontExistsTF{STKaiti}{\setCJKmainfont{STKaiti}}{%
+    \IfFontExistsTF{KaiTi}{\setCJKmainfont{KaiTi}}{%
+      \IfFontExistsTF{Songti SC}{\setCJKmainfont{Songti SC}}{}%
+    }%
+  }%
+}
+
+% Title text: Xingkai-style fonts; fallback to Kaiti-style fonts if unavailable
+\IfFontExistsTF{Xingkai SC}{\setCJKsansfont{Xingkai SC}}{%
+  \IfFontExistsTF{STXingkai}{\setCJKsansfont{STXingkai}}{%
+    \IfFontExistsTF{Kaiti SC}{\setCJKsansfont{Kaiti SC}}{%
+      \IfFontExistsTF{STKaiti}{\setCJKsansfont{STKaiti}}{}%
+    }%
+  }%
+}
+
+% Avoid xeCJK warnings for monospaced CJK fallback
+\IfFontExistsTF{Kaiti SC}{\setCJKmonofont{Kaiti SC}}{%
+  \IfFontExistsTF{STKaiti}{\setCJKmonofont{STKaiti}}{%
+    \IfFontExistsTF{Songti SC}{\setCJKmonofont{Songti SC}}{}%
+  }%
+}
+
+% Let title-like elements use the sans family, so Chinese titles follow the Xingkai setting.
+% Xingkai fonts often do not provide a true bold face, so keep medium weight here.
+\setbeamerfont{title}{family=\sffamily,series=\mdseries}
+\setbeamerfont{subtitle}{family=\sffamily,series=\mdseries}
+\setbeamerfont{frametitle}{family=\sffamily,series=\mdseries}
+\setbeamerfont{section title}{family=\sffamily,series=\mdseries}
+\usepackage{amsmath, amssymb, bm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tikz}
+\usepackage{appendixnumberbeamer}
+
+% ==============================
+% Metadata: replace these fields
+% ==============================
+\title[回归分析]{第X周：课件主标题}
+\subtitle{Regression Analysis 2026}
+\author[课程组]{课程组 / Instructor Name}
+\institute[OUC]{中国海洋大学 \quad Regression Analysis 2026}
+\date{2026-xx-xx}
+
+% Optional short macros for reuse
+\newcommand{\WeekNo}{12}
+\newcommand{\TopicName}{Bias-Variance Tradeoff}
+\newcommand{\CourseName}{Regression Analysis 2026}
+
+% Math shortcuts
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Bias}{\mathrm{Bias}}
+\newcommand{\argmin}{\mathop{\mathrm{argmin}}}
+\newcommand{\lossfn}{\mathcal{L}}
+\newcommand{\regterm}{\Omega}
+
+% Uncomment if needed
+% \logo{\includegraphics[height=0.6cm]{figures/logo.pdf}}
+
+\begin{document}
+
+% ------------------------------
+% Title page
+% ------------------------------
+\begin{frame}[plain]
+    \titlepage
+\end{frame}
+
+% ------------------------------
+% Agenda
+% ------------------------------
+\begin{frame}{本讲导航}
+    \tableofcontents
+\end{frame}
+
+% ==============================
+\section{学习目标}
+% ==============================
+
+\begin{frame}{学习目标}
+    \begin{itemize}
+        \item 理解本讲的核心概念、适用场景与限制条件。
+        \item 能够把公式、图像直觉和业务解释连接起来。
+        \item 能够根据任务目标选择合适的方法、损失函数或评价指标。
+    \end{itemize}
+\end{frame}
+
+% ==============================
+\section{概念导入}
+% ==============================
+
+\begin{frame}{问题背景}
+    \begin{block}{典型问题}
+        在这里用 2--3 句话说明：为什么需要本讲主题？它解决了什么问题？
+    \end{block}
+
+    \vspace{0.4em}
+    \begin{itemize}
+        \item 背景：给出真实数据分析或机器学习中的触发场景。
+        \item 症状：说明传统 OLS / baseline 方法为什么不够。
+        \item 目标：本讲希望学生学会什么判断或方法。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{一句话主结论}
+    \begin{alertblock}{Takeaway}
+        在这里放本讲最关键的一句话结论。建议这一页只保留一个中心判断。
+    \end{alertblock}
+
+    \vspace{0.5em}
+    \begin{exampleblock}{示例写法}
+        “当模型复杂度继续上升时，训练误差可能下降，但测试误差不一定继续下降。”
+    \end{exampleblock}
+\end{frame}
+
+% ==============================
+\section{核心理论}
+% ==============================
+
+\begin{frame}{核心公式模板}
+    \begin{block}{统一目标函数}
+        \[
+            \hat{\beta} = \argmin_{\beta} \; \lossfn(y, X\beta) + \lambda \, \regterm(\beta)
+        \]
+    \end{block}
+
+    \begin{itemize}
+        \item $\lossfn(\cdot)$：替换为本讲的损失函数，例如平方损失或对数似然。
+        \item $\regterm(\cdot)$：替换为本讲的复杂度控制项，例如 $L_1$ 或 $L_2$。
+        \item $\lambda$：控制拟合能力与约束强度的超参数。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{公式解释模板}
+    \begin{columns}[T,onlytextwidth]
+        \column{0.48\textwidth}
+        \begin{block}{数学层面}
+            \begin{itemize}
+                \item 定义变量与符号。
+                \item 说明每一项的作用。
+                \item 指出极端情况：$\lambda = 0$、$\lambda \to \infty$ 等。
+            \end{itemize}
+        \end{block}
+
+        \column{0.48\textwidth}
+        \begin{block}{直观层面}
+            \begin{itemize}
+                \item 解释“模型在做什么”。
+                \item 解释为什么这个公式会影响泛化或可解释性。
+                \item 说明和上周知识的连接。
+            \end{itemize}
+        \end{block}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{对比表模板}
+    \small
+    \begin{table}
+        \centering
+        \begin{tabular}{>{\raggedright\arraybackslash}p{0.18\linewidth} >{\raggedright\arraybackslash}p{0.22\linewidth} >{\raggedright\arraybackslash}p{0.24\linewidth} >{\raggedright\arraybackslash}p{0.24\linewidth}}
+            \toprule
+            方法 & 核心思想 & 优点 & 风险 / 局限 \\
+            \midrule
+            方法 A & 在这里填写 & 在这里填写 & 在这里填写 \\
+            方法 B & 在这里填写 & 在这里填写 & 在这里填写 \\
+            方法 C & 在这里填写 & 在这里填写 & 在这里填写 \\
+            \bottomrule
+        \end{tabular}
+    \end{table}
+\end{frame}
+
+\begin{frame}{图示占位模板}
+    \begin{columns}[c,onlytextwidth]
+        \column{0.58\textwidth}
+        \fbox{%
+            \parbox[c][0.50\textheight][c]{0.95\linewidth}{
+                \centering
+                在此插入图像、流程图或实验曲线\\[0.6em]
+                推荐内容：bias-variance 曲线、regularization path、PCA 投影示意图等
+            }
+        }
+
+        \column{0.38\textwidth}
+        \begin{block}{讲解提示}
+            \begin{itemize}
+                \item 图中横轴是什么？
+                \item 图中纵轴是什么？
+                \item 学生应从图里读出什么结论？
+            \end{itemize}
+        \end{block}
+    \end{columns}
+\end{frame}
+
+% ==============================
+\section{案例与实践}
+% ==============================
+
+\begin{frame}{案例分析模板}
+    \begin{block}{案例描述}
+        用 2--4 句话描述数据来源、业务背景、目标变量和关键特征。
+    \end{block}
+
+    \vspace{0.4em}
+    \begin{enumerate}
+        \item 问题类型：回归 / 分类 / 计数 / 高维分析。
+        \item 主要挑战：异常值、共线性、稀疏性、数据泄露等。
+        \item 本讲方法：为什么适合这个场景？
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}[fragile]{代码模板（可选）}
+\small
+\begin{verbatim}
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import GridSearchCV
+
+pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("model", Ridge())
+])
+
+param_grid = {"model__alpha": [0.1, 1.0, 10.0]}
+search = GridSearchCV(pipe, param_grid=param_grid, cv=5)
+search.fit(X_train, y_train)
+\end{verbatim}
+\end{frame}
+
+\begin{frame}{课堂讨论模板}
+    \begin{block}{讨论题}
+        在这里放一到两个值得讨论的问题，优先选择“有取舍”的问题，而不是单纯记忆题。
+    \end{block}
+
+    \begin{itemize}
+        \item 示例 1：什么时候应该优先选择更稳定但更有偏的模型？
+        \item 示例 2：在高维问题中，变量筛选和降维各自更适合什么目标？
+        \item 示例 3：逻辑回归为什么在工业界仍然具有长期生命力？
+    \end{itemize}
+\end{frame}
+
+% ==============================
+\section{总结与作业}
+% ==============================
+
+\begin{frame}{本讲小结}
+    \begin{enumerate}
+        \item 结论 1：在这里填写本讲的第一条关键结论。
+        \item 结论 2：在这里填写本讲的第二条关键结论。
+        \item 结论 3：在这里填写本讲与后续课程的连接点。
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{作业 / 课后思考}
+    \begin{itemize}
+        \item 练习题 1：针对本讲核心公式做推导或解释。
+        \item 练习题 2：在一个小数据集上完成实验并比较结果。
+        \item 练习题 3：用一句业务语言解释模型输出或误差指标。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+    \centering
+    \vspace{1.5cm}
+    {\usebeamerfont{title}\Huge Q\&A}
+
+    \vspace{1cm}
+    {\Large Thanks}
+\end{frame}
+
+\end{document}
