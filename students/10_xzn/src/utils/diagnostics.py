@@ -22,31 +22,31 @@ def calculate_vif(X: np.ndarray) -> list:
     vif_values = []
 
     for j in range(n_features):
-        # 将第 j 列作为目标变量
         y_j = X[:, j]
-
-        # 其余列作为自变量
         X_others = np.delete(X, j, axis=1)
-
-        # 添加常数项
         X_b = np.c_[np.ones((X_others.shape[0], 1)), X_others]
 
-        # OLS 回归: beta = (X^T X)^{-1} X^T y
         XTX = X_b.T @ X_b
         XTy = X_b.T @ y_j
-        beta = np.linalg.solve(XTX, XTy)
 
-        # 预测值
+        try:
+            beta = np.linalg.solve(XTX, XTy)
+        except np.linalg.LinAlgError:
+            beta = np.linalg.lstsq(XTX, XTy, rcond=None)[0]
+
         y_pred = X_b @ beta
 
-        # 计算 R²
         ss_res = np.sum((y_j - y_pred) ** 2)
         ss_tot = np.sum((y_j - np.mean(y_j)) ** 2)
+
+        if ss_tot < 1e-15:
+            vif_values.append(float("inf"))
+            continue
+
         r_squared = 1.0 - (float(ss_res) / float(ss_tot))
 
-        # VIF = 1 / (1 - R²)，处理 R² = 1 的边界情况
         if r_squared >= 0.999999:
-            vif = float('inf')
+            vif = float("inf")
         else:
             vif = 1.0 / (1.0 - r_squared)
 
