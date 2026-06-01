@@ -29,5 +29,3 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-students/*/data/*.csv
