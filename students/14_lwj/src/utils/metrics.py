@@ -1,10 +1,11 @@
 import numpy as np
 
 def calculate_rmse(y_true, y_pred):
-    return 10.0
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    return np.sqrt(np.mean((y_true - y_pred) ** 2))
 
 def calculate_mae(y_true, y_pred):
-    return 8.0
-
-def calculate_mape(y_true, y_pred):
-    return 5.0
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    return np.mean(np.abs(y_true - y_pred))

@@ -1,12 +1,38 @@
-"""Hand-written transformers used by the Week 11 regression workflow."""
+"""Reusable preprocessing utilities accumulated from Weeks 10-13.
+
+The Week 13 additions keep the Week 10/11 functionality intact while making
+CustomStandardScaler compatible with sklearn Pipeline/GridSearchCV.  This lets
+regularized models use the student's own scaler instead of sklearn's scaler.
+"""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
+try:  # sklearn is an allowed dependency from Week 13 onward.
+    from sklearn.base import BaseEstimator, TransformerMixin
+except Exception:  # pragma: no cover - fallback for environments without sklearn
+    class BaseEstimator:  # type: ignore[no-redef]
+        def get_params(self, deep: bool = True) -> dict:
+            return self.__dict__.copy()
 
-class CustomStandardScaler:
-    """A minimal Transformer-style standard scaler."""
+        def set_params(self, **params):
+            for key, value in params.items():
+                setattr(self, key, value)
+            return self
+
+    class TransformerMixin:  # type: ignore[no-redef]
+        def fit_transform(self, X, y=None, **fit_params):
+            return self.fit(X, y=y, **fit_params).transform(X)
+
+
+class CustomStandardScaler(BaseEstimator, TransformerMixin):
+    """A minimal sklearn-compatible standard scaler.
+
+    Added in Week 10, reused in Weeks 11-13.  In Week 13 it intentionally
+    accepts ``y=None`` and inherits BaseEstimator/TransformerMixin so that it
+    can be placed inside sklearn Pipeline and cloned by GridSearchCV.
+    """
 
     def __init__(self, epsilon: float = 1e-12) -> None:
         if epsilon <= 0:
@@ -15,51 +41,44 @@ class CustomStandardScaler:
         self.mean_: np.ndarray | None = None
         self.std_: np.ndarray | None = None
 
-    def fit(self, X: np.ndarray | pd.DataFrame) -> "CustomStandardScaler":
-        X = np.asarray(X, dtype=float)
-        if X.ndim == 1:
-            X = X.reshape(-1, 1)
-        if X.ndim != 2:
+    def fit(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | None = None) -> "CustomStandardScaler":
+        X_arr = np.asarray(X, dtype=float)
+        if X_arr.ndim == 1:
+            X_arr = X_arr.reshape(-1, 1)
+        if X_arr.ndim != 2:
             raise ValueError("X must be a 1-D or 2-D numeric array")
-
-        self.mean_ = np.nanmean(X, axis=0)
-        self.std_ = np.nanstd(X, axis=0)
+        self.mean_ = np.nanmean(X_arr, axis=0)
+        self.std_ = np.nanstd(X_arr, axis=0)
         self.std_ = np.where(self.std_ < self.epsilon, 1.0, self.std_)
         return self
 
     def transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
         if self.mean_ is None or self.std_ is None:
             raise RuntimeError("CustomStandardScaler must be fitted before transform")
+        X_arr = np.asarray(X, dtype=float)
+        if X_arr.ndim == 1:
+            X_arr = X_arr.reshape(-1, 1)
+        return (X_arr - self.mean_) / self.std_
 
-        X = np.asarray(X, dtype=float)
-        if X.ndim == 1:
-            X = X.reshape(-1, 1)
-        if X.ndim != 2:
-            raise ValueError("X must be a 1-D or 2-D numeric array")
-        if X.shape[1] != self.mean_.shape[0]:
-            raise ValueError("X has a different number of features from the fitted data")
-
-        return (X - self.mean_) / self.std_
-
-    def fit_transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
-        return self.fit(X).transform(X)
+    def fit_transform(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | None = None) -> np.ndarray:
+        return self.fit(X, y=y).transform(X)
 
 
 class CustomNumericImputer:
-    """Mean/median imputer for numeric columns."""
+    """Median/mean imputer fitted on training data only."""
 
     def __init__(self, strategy: str = "median") -> None:
-        if strategy not in {"mean", "median"}:
-            raise ValueError("strategy must be 'mean' or 'median'")
+        if strategy not in {"median", "mean"}:
+            raise ValueError("strategy must be 'median' or 'mean'")
         self.strategy = strategy
         self.statistics_: pd.Series | None = None
 
-    def fit(self, X: pd.DataFrame) -> "CustomNumericImputer":
+    def fit(self, X: pd.DataFrame, y: np.ndarray | None = None) -> "CustomNumericImputer":
         numeric = X.apply(pd.to_numeric, errors="coerce")
         if self.strategy == "median":
-            stats = numeric.median(axis=0)
+            stats = numeric.median()
         else:
-            stats = numeric.mean(axis=0)
+            stats = numeric.mean()
         self.statistics_ = stats.fillna(0.0)
         return self
 
@@ -69,22 +88,21 @@ class CustomNumericImputer:
         numeric = X.apply(pd.to_numeric, errors="coerce")
         return numeric.fillna(self.statistics_)
 
-    def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return self.fit(X).transform(X)
+    def fit_transform(self, X: pd.DataFrame, y: np.ndarray | None = None) -> pd.DataFrame:
+        return self.fit(X, y=y).transform(X)
 
 
 class CustomCategoricalImputer:
-    """Most-frequent imputer for categorical columns."""
+    """Most-frequent categorical imputer with a safe missing token."""
 
     def __init__(self, missing_token: str = "Missing") -> None:
         self.missing_token = missing_token
         self.statistics_: dict[str, str] | None = None
 
-    def fit(self, X: pd.DataFrame) -> "CustomCategoricalImputer":
+    def fit(self, X: pd.DataFrame, y: np.ndarray | None = None) -> "CustomCategoricalImputer":
         stats: dict[str, str] = {}
         for col in X.columns:
-            values = X[col].astype("object")
-            values = values.where(values.notna(), np.nan)
+            values = X[col].astype("object").where(X[col].notna(), np.nan)
             modes = values.dropna().mode()
             stats[col] = str(modes.iloc[0]) if not modes.empty else self.missing_token
         self.statistics_ = stats
@@ -98,8 +116,8 @@ class CustomCategoricalImputer:
             out[col] = out[col].astype("object").where(out[col].notna(), fill_value).astype(str)
         return out
 
-    def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return self.fit(X).transform(X)
+    def fit_transform(self, X: pd.DataFrame, y: np.ndarray | None = None) -> pd.DataFrame:
+        return self.fit(X, y=y).transform(X)
 
 
 class CustomWinsorizer:
@@ -113,7 +131,7 @@ class CustomWinsorizer:
         self.lower_: pd.Series | None = None
         self.upper_: pd.Series | None = None
 
-    def fit(self, X: pd.DataFrame) -> "CustomWinsorizer":
+    def fit(self, X: pd.DataFrame, y: np.ndarray | None = None) -> "CustomWinsorizer":
         numeric = X.apply(pd.to_numeric, errors="coerce")
         self.lower_ = numeric.quantile(self.lower_quantile)
         self.upper_ = numeric.quantile(self.upper_quantile)
@@ -125,8 +143,8 @@ class CustomWinsorizer:
         numeric = X.apply(pd.to_numeric, errors="coerce")
         return numeric.clip(lower=self.lower_, upper=self.upper_, axis=1)
 
-    def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return self.fit(X).transform(X)
+    def fit_transform(self, X: pd.DataFrame, y: np.ndarray | None = None) -> pd.DataFrame:
+        return self.fit(X, y=y).transform(X)
 
 
 class CustomOneHotEncoder:
@@ -140,7 +158,7 @@ class CustomOneHotEncoder:
         self.categories_: dict[str, list[str]] | None = None
         self.feature_names_: list[str] | None = None
 
-    def fit(self, X: pd.DataFrame) -> "CustomOneHotEncoder":
+    def fit(self, X: pd.DataFrame, y: np.ndarray | None = None) -> "CustomOneHotEncoder":
         categories: dict[str, list[str]] = {}
         feature_names: list[str] = []
         for col in X.columns:
@@ -169,15 +187,15 @@ class CustomOneHotEncoder:
             return np.empty((len(X), 0))
         return np.column_stack(columns)
 
-    def fit_transform(self, X: pd.DataFrame) -> np.ndarray:
-        return self.fit(X).transform(X)
+    def fit_transform(self, X: pd.DataFrame, y: np.ndarray | None = None) -> np.ndarray:
+        return self.fit(X, y=y).transform(X)
 
 
 class RegressionPreprocessor:
     """Leakage-safe preprocessing bundle for mixed tabular regression data.
 
-    The object fits imputation, winsorization, scaling and one-hot encoding on
-    a training fold only. Validation/test data should call only transform().
+    It fits imputation, winsorization, scaling and one-hot encoding on a
+    training fold only. Validation/test data should call only transform().
     """
 
     def __init__(
@@ -197,7 +215,7 @@ class RegressionPreprocessor:
         self.encoder = CustomOneHotEncoder(drop_first=drop_first)
         self.feature_names_: list[str] | None = None
 
-    def fit(self, df: pd.DataFrame) -> "RegressionPreprocessor":
+    def fit(self, df: pd.DataFrame, y: np.ndarray | None = None) -> "RegressionPreprocessor":
         num = df[self.numeric_features].copy()
         num_imputed = self.numeric_imputer.fit_transform(num)
         num_winsorized = self.winsorizer.fit_transform(num_imputed)
@@ -228,5 +246,5 @@ class RegressionPreprocessor:
             return np.column_stack([num_scaled, cat_encoded])
         return num_scaled
 
-    def fit_transform(self, df: pd.DataFrame) -> np.ndarray:
-        return self.fit(df).transform(df)
+    def fit_transform(self, df: pd.DataFrame, y: np.ndarray | None = None) -> np.ndarray:
+        return self.fit(df, y=y).transform(df)

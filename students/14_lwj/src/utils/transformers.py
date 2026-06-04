@@ -1,6 +1,6 @@
 import numpy as np
 
-class CustomStandardScaler:
+class StandardScaler:
     def __init__(self):
         self.mean_ = None
         self.std_ = None

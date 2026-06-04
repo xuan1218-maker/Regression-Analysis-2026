@@ -1,5 +1,33 @@
 import numpy as np
 
+
+class CustomImputer:
+    """
+    自定义缺失值填补器
+    使用列均值填补缺失值，遵循 fit / transform / fit_transform 接口
+    """
+
+    def __init__(self):
+        self.means_ = None
+
+    def fit(self, X):
+        X = np.array(X, dtype=float)
+        self.means_ = np.nanmean(X, axis=0)
+        return self
+
+    def transform(self, X):
+        X = np.array(X, dtype=float)
+        X_filled = X.copy()
+        for j in range(X.shape[1]):
+            col = X[:, j]
+            mask = np.isnan(col)
+            X_filled[mask, j] = self.means_[j]
+        return X_filled
+
+    def fit_transform(self, X):
+        return self.fit(X).transform(X)
+
+
 class CustomStandardScaler:
     """
     自定义标准化器
@@ -21,7 +49,6 @@ class CustomStandardScaler:
         X = np.array(X)
         self.mean_ = np.mean(X, axis=0)
         self.std_ = np.std(X, axis=0)
-        # 防止除零：标准差太小则设为 1
         self.std_ = np.where(self.std_ < self.epsilon, 1.0, self.std_)
         return self
     

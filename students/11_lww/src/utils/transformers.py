@@ -22,6 +22,6 @@ class CustomStandardScaler:
             raise ValueError("Scaler has not been fitted yet.")
         return (X - self.mean_) / self.std_
 
-    def fit_transform(self, X: np.ndarray) -> np.ndarray:
-        """合并fit和transform操作"""
+    def fit_transform(self, X: np.ndarray, y=None, **kwargs) -> np.ndarray:
+        """合并fit和transform操作，兼容Sklearn Pipeline接口"""
         return self.fit(X).transform(X)

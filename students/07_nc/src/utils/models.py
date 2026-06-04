@@ -1,7 +1,20 @@
-"""Small regression models maintained as a personal utility library."""
+"""Small regression models and variable-selection tools.
+
+This file preserves earlier OLS utilities and adds Week 13's custom
+cross-validation based forward selection.  Ridge/Lasso/ElasticNet themselves
+are intentionally called from sklearn in the Week 13 script because the
+assignment explicitly permits them.
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import KFold
+
+from utils.metrics import calculate_rmse
 
 
 class AnalyticalOLS:
@@ -41,12 +54,7 @@ class AnalyticalOLS:
 
 
 class GradientDescentOLS:
-    """OLS solved by gradient descent.
-
-    The interface is intentionally simple: fit learns coefficients, predict uses
-    the learned coefficients, and score reports R^2. The class does not add an
-    intercept internally.
-    """
+    """OLS solved by gradient descent."""
 
     def __init__(
         self,
@@ -135,12 +143,7 @@ CustomOLS = AnalyticalOLS
 
 
 class OrdinaryLeastSquares:
-    """Week 12 convenience OLS regressor that adds an intercept internally.
-
-    This class is added on top of the Week 10/11 model utilities.  The earlier
-    AnalyticalOLS and GradientDescentOLS classes are intentionally kept above,
-    so later weeks extend the utils library instead of replacing it.
-    """
+    """Convenience OLS regressor that adds an intercept internally."""
 
     def __init__(self) -> None:
         self.coef_: np.ndarray | None = None
@@ -167,3 +170,105 @@ class OrdinaryLeastSquares:
 
 
 LinearRegressionWithIntercept = OrdinaryLeastSquares
+
+
+@dataclass
+class SelectionStep:
+    """One row of the forward-selection search history."""
+
+    step: int
+    added_feature: str
+    cv_rmse: float
+    selected_features: list[str]
+
+
+class ForwardSelectorCV:
+    """Greedy forward variable selection evaluated by K-fold CV.
+
+    At each step, the algorithm tests every remaining candidate feature, fits a
+    LinearRegression model on the current selected set plus that candidate, and
+    picks the feature with the lowest mean validation RMSE.  This is the custom
+    Week 13 model-selection logic requested by the assignment.
+    """
+
+    def __init__(self, max_features: int = 5, cv: int = 5, random_state: int = 42) -> None:
+        if max_features <= 0:
+            raise ValueError("max_features must be positive")
+        if cv < 2:
+            raise ValueError("cv must be at least 2")
+        self.max_features = max_features
+        self.cv = cv
+        self.random_state = random_state
+        self.selected_indices_: list[int] | None = None
+        self.selected_features_: list[str] | None = None
+        self.history_: list[SelectionStep] = []
+        self.estimator_: LinearRegression | None = None
+
+    def _cv_rmse(self, X: np.ndarray, y: np.ndarray, indices: list[int]) -> float:
+        splitter = KFold(n_splits=self.cv, shuffle=True, random_state=self.random_state)
+        rmses: list[float] = []
+        for train_idx, val_idx in splitter.split(X):
+            model = LinearRegression()
+            model.fit(X[train_idx][:, indices], y[train_idx])
+            pred = model.predict(X[val_idx][:, indices])
+            rmses.append(calculate_rmse(y[val_idx], pred))
+        return float(np.mean(rmses))
+
+    def fit(
+        self,
+        X: np.ndarray | pd.DataFrame,
+        y: np.ndarray,
+        feature_names: list[str] | None = None,
+    ) -> "ForwardSelectorCV":
+        X_arr = np.asarray(X, dtype=float)
+        y_arr = np.asarray(y, dtype=float).ravel()
+        if X_arr.ndim != 2:
+            raise ValueError("X must be 2-D")
+        if X_arr.shape[0] != y_arr.shape[0]:
+            raise ValueError("X and y must have the same number of rows")
+        if feature_names is None:
+            feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
+        if len(feature_names) != X_arr.shape[1]:
+            raise ValueError("feature_names length must match X columns")
+
+        selected: list[int] = []
+        remaining = list(range(X_arr.shape[1]))
+        self.history_ = []
+
+        for step in range(1, min(self.max_features, X_arr.shape[1]) + 1):
+            scores: list[tuple[float, int]] = []
+            for candidate in remaining:
+                score = self._cv_rmse(X_arr, y_arr, selected + [candidate])
+                scores.append((score, candidate))
+            best_score, best_feature_idx = min(scores, key=lambda pair: pair[0])
+            selected.append(best_feature_idx)
+            remaining.remove(best_feature_idx)
+            self.history_.append(
+                SelectionStep(
+                    step=step,
+                    added_feature=feature_names[best_feature_idx],
+                    cv_rmse=best_score,
+                    selected_features=[feature_names[i] for i in selected],
+                )
+            )
+
+        self.selected_indices_ = selected
+        self.selected_features_ = [feature_names[i] for i in selected]
+        self.estimator_ = LinearRegression().fit(X_arr[:, selected], y_arr)
+        return self
+
+    def predict(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
+        if self.selected_indices_ is None or self.estimator_ is None:
+            raise RuntimeError("ForwardSelectorCV must be fitted before predict")
+        X_arr = np.asarray(X, dtype=float)
+        return self.estimator_.predict(X_arr[:, self.selected_indices_])
+
+    def history_frame(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "step": [row.step for row in self.history_],
+                "added_feature": [row.added_feature for row in self.history_],
+                "cv_rmse": [row.cv_rmse for row in self.history_],
+                "selected_features": [", ".join(row.selected_features) for row in self.history_],
+            }
+        )
