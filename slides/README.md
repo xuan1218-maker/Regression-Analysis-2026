@@ -87,6 +87,25 @@ uv run --directory slides jupyter lab
 然后在浏览器里打开：
 - `week12_new/week12_class.ipynb`
 
+### 6. 一步完成最终构建
+当你已经在 notebook 里完成修改，想要收构建 `.py + slides.html + notes.md` 时：
+
+```bash
+uv run --directory slides python -m slide_builder build week13/week13_class.ipynb
+```
+
+这个命令会依次：
+- 把 notebook 改动同步回 `.py`；
+- 执行结构检查并输出 warning/error；
+- 导出 `*.slides.html`；
+- 导出 `*.notes.md`。
+
+如果你只想先验证导出链路、不重新执行 notebook，可加：
+
+```bash
+uv run --directory slides python -m slide_builder build week13/week13_class.ipynb --skip-execute
+```
+
 ## VS Code 使用建议
 
 如果你在 VS Code 中直接打开 notebook：
@@ -101,16 +120,18 @@ uv run --directory slides jupyter lab
 ## 推荐工作流
 
 ### 教师 / 助教
-1. 编辑 `week12_new/week12_class.py`
-2. 同步生成 `week12_new/week12_class.ipynb`
-3. 执行 notebook 检查是否能从头跑通
-4. 上课时使用 `.ipynb`
+1. 和 AI 先讨论 scene 级大纲
+2. 生成或修改 `week12_new/week12_class.py`
+3. 同步生成 `week12_new/week12_class.ipynb`
+4. 在 notebook 视图中运行、检查、微调
+5. 最后执行 build，把修改同步回 `.py` 并导出 slides / notes
 
 对应命令：
 
 ```bash
 uv run --directory slides jupytext --sync week12_new/week12_class.py
 uv run --directory slides jupyter nbconvert --to notebook --execute --inplace week12_new/week12_class.ipynb
+uv run --directory slides python -m slide_builder build week12_new/week12_class.ipynb
 ```
 
 ### 学生
@@ -138,7 +159,7 @@ uv run --directory slides jupyter nbconvert --to notebook --execute --inplace we
 这个文件定义了：
 - notebook 的 cell 类型；
 - tags 规范；
-- teacher-only script 的写法；
+- `script` / `skip` 的写法与 notes 导出约定；
 - agent 应如何生成和同步 notebook。
 
 ## 课堂 notebook 的基本理念
