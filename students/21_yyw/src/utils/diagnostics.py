@@ -1,6 +1,6 @@
 """
 模块：utils.diagnostics
-用途：模型诊断工具箱，包含多重共线性检测（VIF）等函数
+用途：模型诊断工具箱，包含多重共线性检测（VIF）、条件数、系数稳定性分析等函数
 """
 
 import numpy as np
@@ -226,3 +226,110 @@ def compute_vif_on_fold(df: pd.DataFrame, target_col: str, cat_cols: list) -> tu
     (feature_names, vif_values) : tuple
     """
     return diagnose_vif_from_dataframe(df, target_col, cat_cols)
+
+
+def calculate_condition_number(X: np.ndarray) -> float:
+    """
+    计算矩阵 X 的条件数 (condition number)。
+
+    条件数 = σ_max / σ_min，其中 σ 是奇异值。
+    条件数越大，矩阵越接近奇异，OLS 系数估计越不稳定。
+
+    Parameters
+    ----------
+    X : np.ndarray
+        特征矩阵
+
+    Returns
+    -------
+    float
+        条件数
+    """
+    if hasattr(X, 'values'):
+        X = X.values.astype(np.float64)
+    S = np.linalg.svd(X, compute_uv=False)
+    S = S[S > 1e-12]  # 排除数值零
+    if len(S) < 2:
+        return np.inf
+    return S[0] / S[-1]
+
+
+def calculate_matrix_rank(X: np.ndarray, tol: float = 1e-10) -> int:
+    """
+    计算矩阵的数值秩 (numerical rank)。
+
+    Parameters
+    ----------
+    X : np.ndarray
+        特征矩阵
+    tol : float
+        奇异值阈值，低于此值视为零
+
+    Returns
+    -------
+    int
+        数值秩
+    """
+    if hasattr(X, 'values'):
+        X = X.values.astype(np.float64)
+    S = np.linalg.svd(X, compute_uv=False)
+    return int(np.sum(S > tol))
+
+
+def coefficient_stability_analysis(
+    X: np.ndarray, y: np.ndarray, n_splits: int = 50,
+    feature_indices: list = None, test_size: float = 0.3,
+    random_state: int = 42
+) -> dict:
+    """
+    系数稳定性分析：多次随机切分，收集 OLS 系数并计算波动。
+
+    Parameters
+    ----------
+    X : np.ndarray
+        特征矩阵（不含截距列）
+    y : np.ndarray
+        目标变量
+    n_splits : int
+        随机切分次数
+    feature_indices : list
+        要追踪的特征索引列表，None 则取前5个
+    test_size : float
+        测试集比例
+    random_state : int
+        基础随机种子
+
+    Returns
+    -------
+    dict
+        {
+            'coef_matrix': (n_splits, n_features_tracked),
+            'feature_indices': list,
+            'coef_std': array,
+            'coef_mean': array,
+        }
+    """
+    from sklearn.model_selection import train_test_split
+
+    if feature_indices is None:
+        feature_indices = list(range(min(5, X.shape[1])))
+
+    n_tracked = len(feature_indices)
+    coef_matrix = np.zeros((n_splits, n_tracked))
+
+    for i in range(n_splits):
+        X_train, _, y_train, _ = train_test_split(
+            X, y, test_size=test_size, random_state=random_state + i
+        )
+        # 添加截距列
+        X_train_const = np.column_stack([np.ones(X_train.shape[0]), X_train])
+        model = AnalyticalOLS()
+        model.fit(X_train_const, y_train)
+        coef_matrix[i, :] = model.coef_[feature_indices]
+
+    return {
+        'coef_matrix': coef_matrix,
+        'feature_indices': feature_indices,
+        'coef_std': np.std(coef_matrix, axis=0),
+        'coef_mean': np.mean(coef_matrix, axis=0),
+    }
