@@ -44,17 +44,17 @@ def main():
 
     # ========== 第三步：分离目标变量 ==========
     # 假设目标变量是 'Sales'
-    target_col = 'Sales'
-    
+    target_col = "Sales"
+
     if target_col not in df.columns:
         print(f"错误：找不到目标列 '{target_col}'")
         print(f"可用列: {df.columns.tolist()}")
         sys.exit(1)
-    
+
     # 分离特征和目标
     y = df[target_col]  # 目标变量（最后一列）
     X = df.drop(columns=[target_col])  # 特征矩阵
-    
+
     print(f"  - 目标变量: {target_col}")
     print(f"  - 特征列: {X.columns.tolist()}")
 
@@ -78,7 +78,9 @@ def main():
             count_before = (X[col] > percentile_99).sum()
             X[col] = np.where(X[col] > percentile_99, percentile_99, X[col])
             if count_before > 0:
-                print(f"  - {col}: 缩尾处理 {count_before} 个异常值到 {percentile_99:.2f}")
+                print(
+                    f"  - {col}: 缩尾处理 {count_before} 个异常值到 {percentile_99:.2f}"
+                )
 
     # ========== 第七步：填补缺失值 ==========
     # 只对特征填补缺失值
@@ -90,7 +92,7 @@ def main():
     # 确保目标变量在最后一列
     df_clean = X.copy()
     df_clean[target_col] = y
-    
+
     print(f"✓ 清洁数据最终形状: {df_clean.shape}")
     print(f"  - 特征列: {df_clean.columns[:-1].tolist()}")
     print(f"  - 目标列: {df_clean.columns[-1]} (最后一列)")

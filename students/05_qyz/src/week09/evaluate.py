@@ -37,16 +37,16 @@ def main():
 
     # 分离特征和目标变量
     # 假设最后一列是目标变量 Sales
-    target_col = 'Sales'
-    
+    target_col = "Sales"
+
     if target_col not in df.columns:
         # 如果找不到 Sales 列，则取最后一列
         target_col = df.columns[-1]
-    
+
     feature_cols = [col for col in df.columns if col != target_col]
     X = df[feature_cols].values
     y = df[target_col].values
-    
+
     print(f"目标变量: {target_col}")
     print(f"特征变量 ({len(feature_cols)}个): {feature_cols}")
 

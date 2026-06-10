@@ -5,6 +5,8 @@ Purpose: Core machine learning estimators for regression.
 
 import numpy as np
 from scipy import stats
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
 from typing import Dict
 
 
@@ -40,7 +42,7 @@ class AnalyticalOLS:
         self.fitted_values_ = X_design @ self.coef_
         self.residuals_ = y - self.fitted_values_
 
-        RSS = np.sum(self.residuals_ ** 2)
+        RSS = np.sum(self.residuals_**2)
         self.df_resid_ = n - p
         self.sigma2_ = RSS / self.df_resid_
         self.cov_matrix_ = self.sigma2_ * XtX_inv
@@ -163,12 +165,16 @@ class GradientDescentOLS:
 
             # 5. 检查收敛
             if epoch > 50:
-                rel_loss_change = abs(self.loss_history_[-1] - self.loss_history_[-2]) / (abs(self.loss_history_[-2]) + 1e-8)
+                rel_loss_change = abs(
+                    self.loss_history_[-1] - self.loss_history_[-2]
+                ) / (abs(self.loss_history_[-2]) + 1e-8)
                 if rel_loss_change < self.tol:
                     print(f"收敛于第 {epoch} 轮，loss 相对变化 = {rel_loss_change:.2e}")
                     break
 
-        print(f"训练完成: 共 {len(self.loss_history_)} 轮，最终 loss = {self.loss_history_[-1]:.6f}")
+        print(
+            f"训练完成: 共 {len(self.loss_history_)} 轮，最终 loss = {self.loss_history_[-1]:.6f}"
+        )
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -183,8 +189,9 @@ class GradientDescentOLS:
         SST = np.sum((y - np.mean(y)) ** 2)
         return 1 - SSE / SST
 
+
 # =============================================================================
-#Ridge 岭回归 
+# Ridge 岭回归
 # 作用：解决多重共线性 → 矩阵永不奇异 → 不删特征 → 不报错
 # =============================================================================
 class RidgeRegression:
@@ -201,8 +208,8 @@ class RidgeRegression:
         """
         self.alpha = alpha
         self.fit_intercept = fit_intercept
-        self.coef_ = None       # 系数
-        self.intercept_ = None   # 截距
+        self.coef_ = None  # 系数
+        self.intercept_ = None  # 截距
 
     def _add_intercept(self, X: np.ndarray) -> np.ndarray:
         """和 OLS 保持一致：给 X 加一列 1"""
@@ -255,3 +262,44 @@ class RidgeRegression:
         ss_res = np.sum((y - y_pred) ** 2)
         ss_tot = np.sum((y - np.mean(y)) ** 2)
         return 1 - (ss_res / ss_tot)
+
+
+class PCRRegressor:
+    """Principal Component Regression (PCR) 实现。"""
+
+    def __init__(self, n_components: int = 5):
+        self.n_components = n_components
+        self.pca = None
+        self.regressor = None
+        self.scaler_mean_ = None
+        self.scaler_scale_ = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        self.scaler_mean_ = np.mean(X, axis=0)
+        self.scaler_scale_ = np.std(X, axis=0, ddof=1)
+        self.scaler_scale_[self.scaler_scale_ == 0] = 1.0
+        X_scaled = (X - self.scaler_mean_) / self.scaler_scale_
+
+        self.pca = PCA(n_components=self.n_components)
+        Z = self.pca.fit_transform(X_scaled)
+        self.regressor = LinearRegression().fit(Z, y)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if self.pca is None or self.regressor is None:
+            raise RuntimeError("请先调用 fit()")
+        X_scaled = (X - self.scaler_mean_) / self.scaler_scale_
+        Z = self.pca.transform(X_scaled)
+        return self.regressor.predict(Z)
+
+    @property
+    def explained_variance_ratio_(self):
+        if self.pca is None:
+            raise RuntimeError("请先调用 fit()")
+        return self.pca.explained_variance_ratio_
+
+    @property
+    def coef_(self):
+        if self.pca is None or self.regressor is None:
+            raise RuntimeError("请先调用 fit()")
+        return self.pca.components_.T @ self.regressor.coef_
