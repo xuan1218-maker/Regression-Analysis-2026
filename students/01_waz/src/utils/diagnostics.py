@@ -75,3 +75,29 @@ def residual_summary(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]
         "residual_median": float(np.median(residuals)),
         "residual_p95_abs": float(np.quantile(np.abs(residuals), 0.95)),
     }
+
+
+# ---------------------------------------------------------------------------
+# Week 14: matrix diagnostics for high-dimensional regression
+# ---------------------------------------------------------------------------
+
+def matrix_rank(X: np.ndarray, tol: float = 1e-10) -> int:
+    """Numerical rank of a matrix via SVD singular-value threshold."""
+    X_arr = np.asarray(X, dtype=float)
+    S = np.linalg.svd(X_arr, compute_uv=False)
+    return int(np.sum(S > tol * S[0]))
+
+
+def condition_number(X: np.ndarray) -> float:
+    """Condition number κ(X) = σ_max / σ_min (via SVD)."""
+    X_arr = np.asarray(X, dtype=float)
+    S = np.linalg.svd(X_arr, compute_uv=False)
+    S_pos = S[S > 1e-12]
+    if len(S_pos) == 0:
+        return np.inf
+    return float(S_pos[0] / S_pos[-1])
+
+
+def coefficient_std(coef_matrix: np.ndarray) -> np.ndarray:
+    """Column-wise standard deviation of coefficient estimates across splits."""
+    return np.asarray(np.std(coef_matrix, axis=0), dtype=float)

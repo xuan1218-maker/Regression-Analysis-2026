@@ -286,3 +286,110 @@ class ForwardSelectorCV:
                 "selected_features": [", ".join(row.selected_features) for row in self.history_],
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Week 14: PCR (Principal Component Regression)
+# ---------------------------------------------------------------------------
+
+class CustomPCA:
+    """Custom PCA implementation using SVD.
+
+    Mimics the sklearn PCA interface (fit, transform, fit_transform,
+    explained_variance_ratio_, components_) but is built from scratch
+    for pedagogical transparency.
+    """
+
+    def __init__(self, n_components: int | None = None):
+        self.n_components = n_components
+        self.components_ = None
+        self.explained_variance_ratio_ = None
+        self.singular_values_ = None
+        self.mean_ = None
+
+    def fit(self, X: np.ndarray):
+        X_arr = np.asarray(X, dtype=float)
+        self.mean_ = X_arr.mean(axis=0)
+        X_centered = X_arr - self.mean_
+
+        U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
+        self.singular_values_ = S
+        self.components_ = Vt
+
+        explained_var = S ** 2 / (X_arr.shape[0] - 1)
+        total_var = np.sum(explained_var)
+        self.explained_variance_ratio_ = explained_var / total_var
+
+        if self.n_components is not None:
+            self.components_ = self.components_[:self.n_components]
+            self.explained_variance_ratio_ = self.explained_variance_ratio_[:self.n_components]
+
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        if self.mean_ is None or self.components_ is None:
+            raise RuntimeError("CustomPCA: must call fit() before transform()")
+        X_arr = np.asarray(X, dtype=float)
+        X_centered = X_arr - self.mean_
+        return X_centered @ self.components_.T
+
+    def fit_transform(self, X: np.ndarray) -> np.ndarray:
+        return self.fit(X).transform(X)
+
+
+class PCR:
+    """Principal Component Regression.
+
+    1. Standardize X.
+    2. Run PCA, keep top k components.
+    3. Fit OLS on the principal component scores.
+    """
+
+    def __init__(self, n_components: int = 5):
+        self.n_components = n_components
+        self.pca_ = None
+        self.regressor_ = None
+        self.scaler_ = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        from utils.transformers import CustomStandardScaler
+
+        self.scaler_ = CustomStandardScaler()
+        X_scaled = self.scaler_.fit_transform(X)
+
+        self.pca_ = CustomPCA(n_components=self.n_components)
+        X_pca = self.pca_.fit_transform(X_scaled)
+
+        self.regressor_ = LinearRegression()
+        self.regressor_.fit(X_pca, y)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if self.scaler_ is None or self.pca_ is None or self.regressor_ is None:
+            raise RuntimeError("PCR: must call fit() before predict()")
+        X_scaled = self.scaler_.transform(X)
+        X_pca = self.pca_.transform(X_scaled)
+        return self.regressor_.predict(X_pca)
+
+
+def cv_pcr_scores(
+    X: np.ndarray,
+    y: np.ndarray,
+    k_list: list[int],
+    cv: int = 5,
+    random_state: int = 42,
+) -> dict[int, float]:
+    """Cross-validated RMSE for PCR across a list of component counts."""
+    splitter = KFold(n_splits=cv, shuffle=True, random_state=random_state)
+    scores: dict[int, list[float]] = {k: [] for k in k_list}
+
+    for train_idx, val_idx in splitter.split(X):
+        X_tr, X_val = X[train_idx], X[val_idx]
+        y_tr, y_val = y[train_idx], y[val_idx]
+        for k in k_list:
+            model = PCR(n_components=k)
+            model.fit(X_tr, y_tr)
+            pred = model.predict(X_val)
+            scores[k].append(calculate_rmse(y_val, pred))
+
+    return {k: float(np.mean(v)) for k, v in scores.items()}
