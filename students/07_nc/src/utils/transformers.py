@@ -1,17 +1,16 @@
-"""Reusable preprocessing utilities accumulated from Weeks 10-13.
+"""从 Week10 到 Week13 持续维护的预处理工具。
 
-The Week 13 additions keep the Week 10/11 functionality intact while making
-CustomStandardScaler compatible with sklearn Pipeline/GridSearchCV.  This lets
-regularized models use the student's own scaler instead of sklearn's scaler.
+Week13 在不删减 Week10/Week11 功能的基础上，让 CustomStandardScaler 兼容
+sklearn Pipeline/GridSearchCV。这样正则化模型可以继续使用学生自己实现的标准化器。
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-try:  # sklearn is an allowed dependency from Week 13 onward.
+try:  # 从 Week13 开始，作业允许使用 sklearn 作为辅助依赖。
     from sklearn.base import BaseEstimator, TransformerMixin
-except Exception:  # pragma: no cover - fallback for environments without sklearn
+except Exception:  # pragma: no cover - 兼容没有 sklearn 的环境
     class BaseEstimator:  # type: ignore[no-redef]
         def get_params(self, deep: bool = True) -> dict:
             return self.__dict__.copy()
@@ -27,11 +26,11 @@ except Exception:  # pragma: no cover - fallback for environments without sklear
 
 
 class CustomStandardScaler(BaseEstimator, TransformerMixin):
-    """A minimal sklearn-compatible standard scaler.
+    """一个简化版、兼容 sklearn 风格的标准化器。
 
-    Added in Week 10, reused in Weeks 11-13.  In Week 13 it intentionally
-    accepts ``y=None`` and inherits BaseEstimator/TransformerMixin so that it
-    can be placed inside sklearn Pipeline and cloned by GridSearchCV.
+    它在 Week10 添加，并在 Week11-Week13 持续复用。Week13 中增加 ``y=None``，
+    并继承 BaseEstimator/TransformerMixin，使它能放入 sklearn Pipeline，
+    也能被 GridSearchCV 克隆。
     """
 
     def __init__(self, epsilon: float = 1e-12) -> None:
@@ -65,7 +64,7 @@ class CustomStandardScaler(BaseEstimator, TransformerMixin):
 
 
 class CustomNumericImputer:
-    """Median/mean imputer fitted on training data only."""
+    """只在训练数据上拟合的数值缺失值填补器，支持中位数/均值。"""
 
     def __init__(self, strategy: str = "median") -> None:
         if strategy not in {"median", "mean"}:
@@ -93,7 +92,7 @@ class CustomNumericImputer:
 
 
 class CustomCategoricalImputer:
-    """Most-frequent categorical imputer with a safe missing token."""
+    """类别变量众数填补器，并提供安全的缺失类别标记。"""
 
     def __init__(self, missing_token: str = "Missing") -> None:
         self.missing_token = missing_token
@@ -121,7 +120,7 @@ class CustomCategoricalImputer:
 
 
 class CustomWinsorizer:
-    """Clip numeric columns at training-set quantiles."""
+    """按照训练集分位数对数值列进行缩尾裁剪。"""
 
     def __init__(self, lower_quantile: float = 0.01, upper_quantile: float = 0.99) -> None:
         if not 0 <= lower_quantile < upper_quantile <= 1:
@@ -148,7 +147,7 @@ class CustomWinsorizer:
 
 
 class CustomOneHotEncoder:
-    """Simple one-hot encoder with train-time category memory."""
+    """简单独热编码器，会记住训练阶段见过的类别。"""
 
     def __init__(self, drop_first: bool = True, handle_unknown: str = "ignore") -> None:
         if handle_unknown not in {"ignore", "error"}:
@@ -192,10 +191,10 @@ class CustomOneHotEncoder:
 
 
 class RegressionPreprocessor:
-    """Leakage-safe preprocessing bundle for mixed tabular regression data.
+    """适用于混合类型表格回归数据的无泄露预处理组合。
 
-    It fits imputation, winsorization, scaling and one-hot encoding on a
-    training fold only. Validation/test data should call only transform().
+    缺失值填补、缩尾、标准化和独热编码都只在训练折上拟合。
+    验证集/测试集只能调用 transform()，不能重新 fit。
     """
 
     def __init__(

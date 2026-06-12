@@ -1,1 +1,1 @@
-"""Reusable utilities for regression analysis assignments."""
+"""回归分析作业中复用的工具模块。"""
