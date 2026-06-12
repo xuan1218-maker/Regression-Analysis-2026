@@ -160,22 +160,22 @@ def run_ols_dimension_experiment() -> pd.DataFrame:
     # --- Figure 1: train/test RMSE vs p ---
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
 
-    ax1.plot(result["p"], result["train_rmse"], marker="o", label="训练集 RMSE")
-    ax1.plot(result["p"], result["test_rmse"], marker="s", label="测试集 RMSE")
-    ax1.set_xlabel("特征数量 p")
+    ax1.plot(result["p"], result["train_rmse"], marker="o", label="Train RMSE")
+    ax1.plot(result["p"], result["test_rmse"], marker="s", label="Test RMSE")
+    ax1.set_xlabel("Number of features p")
     ax1.set_ylabel("RMSE")
-    ax1.set_title("OLS 误差随特征维度的变化")
+    ax1.set_title("OLS Error vs. Feature Dimension")
     ax1.legend()
     ax1.grid(alpha=0.3)
 
-    ax2.plot(result["p"], result["rank_X_train"], marker="o", color="tab:blue", label="矩阵秩")
-    ax2.set_xlabel("特征数量 p")
-    ax2.set_ylabel("训练集矩阵秩", color="tab:blue")
+    ax2.plot(result["p"], result["rank_X_train"], marker="o", color="tab:blue", label="Rank")
+    ax2.set_xlabel("Number of features p")
+    ax2.set_ylabel("Rank of training matrix", color="tab:blue")
     ax2.tick_params(axis="y", labelcolor="tab:blue")
-    ax2.set_title("矩阵秩与条件数")
+    ax2.set_title("Matrix Rank and Condition Number")
     ax3 = ax2.twinx()
-    ax3.plot(result["p"], result["condition_number"], marker="s", color="tab:red", label="条件数")
-    ax3.set_ylabel("条件数 κ(X)", color="tab:red")
+    ax3.plot(result["p"], result["condition_number"], marker="s", color="tab:red", label="Cond. number")
+    ax3.set_ylabel("Condition number κ(X)", color="tab:red")
     ax3.tick_params(axis="y", labelcolor="tab:red")
     lines1, labels1 = ax2.get_legend_handles_labels()
     lines2, labels2 = ax3.get_legend_handles_labels()
@@ -228,9 +228,9 @@ def run_coefficient_instability() -> pd.DataFrame:
     data = [coef_df.loc[coef_df["feature"] == f"x{j + 1}", "coefficient"].values
             for j in selected_cols]
     plt.boxplot(data, labels=[f"x{j + 1}" for j in selected_cols])
-    plt.xlabel("变量")
-    plt.ylabel("50 次随机划分下的回归系数")
-    plt.title("OLS 系数在不同随机划分下的波动")
+    plt.xlabel("Feature")
+    plt.ylabel("Coefficient across 50 random splits")
+    plt.title("OLS Coefficient Instability")
     plt.grid(axis="y", alpha=0.3)
     save_figure("A4_coefficient_instability.png")
 
@@ -266,11 +266,11 @@ def run_pca_analysis() -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray
 
     plt.figure(figsize=(7, 4.5))
     plt.plot(pca_df["component"], pca_df["cumulative_explained_variance"], marker="o")
-    plt.axhline(0.80, color="gray", linestyle="--", label="80% 方差")
-    plt.axhline(0.90, color="red", linestyle="--", label="90% 方差")
-    plt.xlabel("主成分个数")
-    plt.ylabel("累计解释方差比例")
-    plt.title("PCA 累计解释方差曲线")
+    plt.axhline(0.80, color="gray", linestyle="--", label="80% variance")
+    plt.axhline(0.90, color="red", linestyle="--", label="90% variance")
+    plt.xlabel("Number of principal components")
+    plt.ylabel("Cumulative explained variance ratio")
+    plt.title("PCA Cumulative Explained Variance")
     plt.xlim(1, 30)
     plt.ylim(0, 1.02)
     plt.legend()
@@ -320,16 +320,16 @@ def run_pcr_experiment(
     ols_test_rmse = calculate_rmse(y_test, ols.predict(X_test_s))
 
     plt.figure(figsize=(8, 4.8))
-    plt.plot(result["k"], result["train_rmse"], marker="o", label="训练集 RMSE")
-    plt.plot(result["k"], result["test_rmse"], marker="s", label="测试集 RMSE")
-    plt.plot(result["k"], result["cv_rmse"], marker="^", label="5 折 CV RMSE")
+    plt.plot(result["k"], result["train_rmse"], marker="o", label="Train RMSE")
+    plt.plot(result["k"], result["test_rmse"], marker="s", label="Test RMSE")
+    plt.plot(result["k"], result["cv_rmse"], marker="^", label="5-fold CV RMSE")
     plt.axhline(ols_test_rmse, color="red", linestyle="--",
-                label=f"OLS 测试 RMSE = {ols_test_rmse:.3f}")
+                label=f"OLS test RMSE = {ols_test_rmse:.3f}")
     plt.axvline(best_k, color="gray", linestyle="--",
-                label=f"CV 最优 k = {best_k}")
-    plt.xlabel("保留主成分个数 k")
+                label=f"CV best k = {best_k}")
+    plt.xlabel("Number of principal components k")
     plt.ylabel("RMSE")
-    plt.title("PCR 误差随主成分个数的变化")
+    plt.title("PCR Error vs. Number of Components")
     plt.legend()
     plt.grid(alpha=0.3)
     save_figure("B2_pcr_cv_rmse.png")
@@ -398,14 +398,14 @@ def run_lasso_vs_pcr() -> pd.DataFrame:
     X_lf = df_lf.drop(columns=["y"]).to_numpy()
     y_lf = df_lf["y"].to_numpy()
 
-    res_sp = evaluate_lasso_vs_pcr_scenario("稀疏真实机制", X_sp, y_sp)
-    res_lf = evaluate_lasso_vs_pcr_scenario("潜在因子机制", X_lf, y_lf)
+    res_sp = evaluate_lasso_vs_pcr_scenario("Sparse truth", X_sp, y_sp)
+    res_lf = evaluate_lasso_vs_pcr_scenario("Latent-factor truth", X_lf, y_lf)
 
     summary = pd.DataFrame([res_sp, res_lf])
 
     # Bar chart
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
-    scenarios = ["稀疏真实机制", "潜在因子机制"]
+    scenarios = ["Sparse truth", "Latent-factor truth"]
     for ax, scenario in zip(axes, scenarios):
         row = summary[summary["scenario"] == scenario].iloc[0]
         methods = ["Lasso", "PCR"]
@@ -413,13 +413,13 @@ def run_lasso_vs_pcr() -> pd.DataFrame:
         complexity = [row["lasso_nonzero"], row["pcr_best_k"]]
         bars = ax.bar(methods, rmses, color=["#2ca02c", "#1f77b4"])
         ax.set_title(scenario)
-        ax.set_ylabel("测试集 RMSE")
+        ax.set_ylabel("Test RMSE")
         ax.grid(axis="y", alpha=0.3)
         for bar, comp in zip(bars, complexity):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    f"复杂度={comp}", ha="center", va="bottom", fontsize=9)
+                    f"complexity={comp}", ha="center", va="bottom", fontsize=9)
 
-    fig.suptitle("Lasso vs PCR：不同数据机制下的表现对比")
+    fig.suptitle("Lasso vs PCR: Comparison under Different Data Mechanisms")
     save_figure("C_lasso_vs_pcr.png")
     return summary
 
