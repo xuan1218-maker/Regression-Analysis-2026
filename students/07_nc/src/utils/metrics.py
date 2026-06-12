@@ -1,4 +1,4 @@
-"""Hand-written regression metrics reused in Week 11."""
+"""手写回归评价指标，从 Week10/Week11 开始持续复用。"""
 from __future__ import annotations
 
 import numpy as np
@@ -27,13 +27,13 @@ def _validate_metric_inputs(
 
 
 def calculate_rmse(y_true: np.ndarray | list[float], y_pred: np.ndarray | list[float]) -> float:
-    """Calculate Root Mean Squared Error."""
+    """计算均方根误差 RMSE。"""
     true, pred = _validate_metric_inputs(y_true, y_pred)
     return float(np.sqrt(np.mean((true - pred) ** 2)))
 
 
 def calculate_mae(y_true: np.ndarray | list[float], y_pred: np.ndarray | list[float]) -> float:
-    """Calculate Mean Absolute Error."""
+    """计算平均绝对误差 MAE。"""
     true, pred = _validate_metric_inputs(y_true, y_pred)
     return float(np.mean(np.abs(true - pred)))
 
@@ -43,7 +43,7 @@ def calculate_mape(
     y_pred: np.ndarray | list[float],
     epsilon: float = 1e-8,
 ) -> float:
-    """Calculate Mean Absolute Percentage Error, returned as a percentage."""
+    """计算平均绝对百分比误差 MAPE，返回百分数。"""
     if epsilon <= 0:
         raise ValueError("epsilon must be positive")
 
@@ -60,7 +60,7 @@ def summarize_regression_metrics(
     y_true: np.ndarray | list[float],
     y_pred: np.ndarray | list[float],
 ) -> dict[str, float]:
-    """Return a metric dictionary used by reports."""
+    """返回报告中使用的回归指标字典。"""
     return {
         "RMSE": calculate_rmse(y_true, y_pred),
         "MAE": calculate_mae(y_true, y_pred),
@@ -69,11 +69,11 @@ def summarize_regression_metrics(
 
 
 def calculate_mse(y_true: np.ndarray | list[float], y_pred: np.ndarray | list[float]) -> float:
-    """Calculate Mean Squared Error; added for later bias-variance experiments."""
+    """计算均方误差 MSE；用于后续偏差-方差实验。"""
     true, pred = _validate_metric_inputs(y_true, y_pred)
     return float(np.mean((true - pred) ** 2))
 
 
 def generalization_gap(train_error: float, test_error: float) -> float:
-    """Return test error minus train error, used in Week 12 complexity curves."""
+    """返回测试误差减训练误差，用于 Week12 模型复杂度曲线。"""
     return float(test_error - train_error)

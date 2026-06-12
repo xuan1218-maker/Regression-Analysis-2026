@@ -1,4 +1,4 @@
-"""Regression diagnostics maintained in the personal utils library."""
+"""个人 utils 库中持续维护的回归诊断工具。"""
 from __future__ import annotations
 
 import numpy as np
@@ -8,7 +8,7 @@ from utils.models import AnalyticalOLS
 
 
 def add_intercept(X: np.ndarray) -> np.ndarray:
-    """Add a leading intercept column to a numeric design matrix."""
+    """给数值设计矩阵添加最前面的截距列。"""
     X = np.asarray(X, dtype=float)
     if X.ndim != 2:
         raise ValueError("X must be 2-D")
@@ -16,11 +16,10 @@ def add_intercept(X: np.ndarray) -> np.ndarray:
 
 
 def calculate_vif(X: np.ndarray, feature_names: list[str]) -> pd.DataFrame:
-    """Calculate variance inflation factors using the custom OLS model.
+    """使用自定义 OLS 模型计算方差膨胀因子 VIF。
 
-    VIF_j = 1 / (1 - R_j^2), where R_j^2 comes from regressing feature j on the
-    remaining features. The function is written directly with numpy and the
-    custom AnalyticalOLS rather than relying on statsmodels.
+    VIF_j = 1 / (1 - R_j^2)，其中 R_j^2 来自“用其他特征回归第 j 个特征”。
+    这里直接使用 numpy 和自定义 AnalyticalOLS 实现，不依赖 statsmodels。
     """
     X = np.asarray(X, dtype=float)
     if X.ndim != 2:
@@ -44,7 +43,7 @@ def calculate_vif(X: np.ndarray, feature_names: list[str]) -> pd.DataFrame:
 
 
 def correlation_pairs(df: pd.DataFrame, threshold: float = 0.75) -> pd.DataFrame:
-    """Return absolute correlations above a threshold for numeric columns."""
+    """返回数值列中绝对相关系数超过阈值的变量对。"""
     corr = df.select_dtypes(include=[np.number]).corr().abs()
     rows: list[dict[str, float | str]] = []
     cols = list(corr.columns)
@@ -57,7 +56,7 @@ def correlation_pairs(df: pd.DataFrame, threshold: float = 0.75) -> pd.DataFrame
 
 
 def residual_summary(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    """Basic residual diagnostics for reports."""
+    """为报告生成基础残差诊断统计。"""
     residuals = np.asarray(y_true, dtype=float).ravel() - np.asarray(y_pred, dtype=float).ravel()
     return {
         "residual_mean": float(np.mean(residuals)),

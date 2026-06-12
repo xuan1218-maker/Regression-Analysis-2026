@@ -1,9 +1,8 @@
-"""Small regression models and variable-selection tools.
+"""从 Week10 到 Week14 持续维护的回归模型和模型选择工具。
 
-This file preserves earlier OLS utilities and adds Week 13's custom
-cross-validation based forward selection.  Ridge/Lasso/ElasticNet themselves
-are intentionally called from sklearn in the Week 13 script because the
-assignment explicitly permits them.
+本文件保留前几周已经实现的 OLS、梯度下降和前向选择等工具，
+并在 Week14 增加 PCR 工作流、矩阵条件数和稳定性比较函数。
+在作业允许的位置使用 sklearn 组件，但核心实验逻辑仍放在自己的 utils 包中。
 """
 from __future__ import annotations
 
@@ -11,17 +10,18 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import KFold
 
 from utils.metrics import calculate_rmse
+from utils.transformers import CustomStandardScaler
 
 
 class AnalyticalOLS:
-    """Ordinary Least Squares solved by the normal equation.
+    """用最小二乘方式求解普通线性回归。
 
-    The class does not add an intercept automatically. Add a column of ones
-    before fit/predict if an intercept is needed.
+    该类不会自动添加截距项；如果需要截距，请在拟合前自行添加一列 1。
     """
 
     def __init__(self) -> None:
@@ -54,7 +54,7 @@ class AnalyticalOLS:
 
 
 class GradientDescentOLS:
-    """OLS solved by gradient descent."""
+    """使用梯度下降求解 OLS；保留自前几周作业。"""
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ CustomOLS = AnalyticalOLS
 
 
 class OrdinaryLeastSquares:
-    """Convenience OLS regressor that adds an intercept internally."""
+    """自动在内部添加截距项的便捷 OLS 回归器。"""
 
     def __init__(self) -> None:
         self.coef_: np.ndarray | None = None
@@ -174,7 +174,7 @@ LinearRegressionWithIntercept = OrdinaryLeastSquares
 
 @dataclass
 class SelectionStep:
-    """One row of the forward-selection search history."""
+    """前向选择搜索过程中的一条历史记录。"""
 
     step: int
     added_feature: str
@@ -183,13 +183,7 @@ class SelectionStep:
 
 
 class ForwardSelectorCV:
-    """Greedy forward variable selection evaluated by K-fold CV.
-
-    At each step, the algorithm tests every remaining candidate feature, fits a
-    LinearRegression model on the current selected set plus that candidate, and
-    picks the feature with the lowest mean validation RMSE.  This is the custom
-    Week 13 model-selection logic requested by the assignment.
-    """
+    """基于 K 折交叉验证评价的贪心前向变量选择。"""
 
     def __init__(self, max_features: int = 5, cv: int = 5, random_state: int = 42) -> None:
         if max_features <= 0:
@@ -272,3 +266,85 @@ class ForwardSelectorCV:
                 "selected_features": [", ".join(row.selected_features) for row in self.history_],
             }
         )
+
+
+class PCRRegressor:
+    """主成分回归 PCR：标准化 -> PCA -> 线性回归。
+
+    标准化器和 PCA 都只在训练数据上拟合。验证集/测试集只用已拟合对象转换，
+    从而避免数据泄露。
+    """
+
+    def __init__(self, n_components: int) -> None:
+        if n_components <= 0:
+            raise ValueError("n_components must be positive")
+        self.n_components = int(n_components)
+        self.scaler = CustomStandardScaler()
+        self.pca = PCA(n_components=self.n_components)
+        self.regressor = LinearRegression()
+        self.explained_variance_ratio_: np.ndarray | None = None
+
+    def fit(self, X: np.ndarray | pd.DataFrame, y: np.ndarray) -> "PCRRegressor":
+        X_arr = np.asarray(X, dtype=float)
+        y_arr = np.asarray(y, dtype=float).ravel()
+        X_scaled = self.scaler.fit_transform(X_arr)
+        Z = self.pca.fit_transform(X_scaled)
+        self.regressor.fit(Z, y_arr)
+        self.explained_variance_ratio_ = self.pca.explained_variance_ratio_
+        return self
+
+    def transform(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
+        X_scaled = self.scaler.transform(X)
+        return self.pca.transform(X_scaled)
+
+    def predict(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
+        Z = self.transform(X)
+        return self.regressor.predict(Z)
+
+
+def pcr_cv_rmse(
+    X: np.ndarray | pd.DataFrame,
+    y: np.ndarray,
+    n_components: int,
+    cv: int = 5,
+    random_state: int = 42,
+) -> float:
+    """计算 PCR 的交叉验证 RMSE；每折内部重新完成全部预处理。"""
+    X_arr = np.asarray(X, dtype=float)
+    y_arr = np.asarray(y, dtype=float).ravel()
+    splitter = KFold(n_splits=cv, shuffle=True, random_state=random_state)
+    rmses: list[float] = []
+    for train_idx, val_idx in splitter.split(X_arr):
+        model = PCRRegressor(n_components=n_components)
+        model.fit(X_arr[train_idx], y_arr[train_idx])
+        pred = model.predict(X_arr[val_idx])
+        rmses.append(calculate_rmse(y_arr[val_idx], pred))
+    return float(np.mean(rmses))
+
+
+def design_rank_and_condition(X: np.ndarray, tol: float = 1e-10) -> tuple[int, float]:
+    """返回矩阵秩，以及显式考虑奇异性的条件数。
+
+    在高维 OLS 中，X 的列数可能大于行数。此时即使 X 满行秩，X'X 也会奇异，
+    因此只要 rank < 特征列数，本函数就返回 ``inf``。
+    """
+    X_arr = np.asarray(X, dtype=float)
+    rank = int(np.linalg.matrix_rank(X_arr, tol=tol))
+    if rank < X_arr.shape[1]:
+        return rank, float("inf")
+    singular_values = np.linalg.svd(X_arr, compute_uv=False)
+    positive = singular_values[singular_values > tol]
+    if positive.size == 0:
+        return rank, float("inf")
+    return rank, float(positive.max() / positive.min())
+
+
+def prediction_stability_score(prediction_matrix: np.ndarray) -> float:
+    """计算重复预测矩阵逐样本标准差的平均值。
+
+    数值越低，表示同一批锚点样本在不同训练切分下得到的预测越稳定。
+    """
+    arr = np.asarray(prediction_matrix, dtype=float)
+    if arr.ndim != 2:
+        raise ValueError("prediction_matrix must be 2-D: repeats x anchor_points")
+    return float(np.mean(np.std(arr, axis=0)))
