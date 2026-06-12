@@ -3,6 +3,8 @@ Module: utils.models
 Purpose: Core machine learning estimators.
 """
 import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
 
 
 class AnalyticalOLS:
@@ -227,3 +229,151 @@ class ForwardSelectionRegressor:
         if self.selected_features_ is None:
             raise ValueError("Model must be fitted first.")
         return [self.feature_names_[i] for i in self.selected_features_]
+
+
+class PCR:
+    """
+    Principal Component Regression (PCR).
+    
+    Workflow: Standardize -> PCA -> keep k PCs -> LinearRegression on PC scores.
+    
+    This class wraps sklearn's PCA and LinearRegression, but the workflow
+    logic (how k is chosen, how CV is performed) is explicitly managed
+    by the caller or via the built-in CV method.
+    """
+    
+    def __init__(self, n_components: int = None):
+        """
+        Parameters:
+        -----------
+        n_components : int or None
+            Number of principal components to retain. If None, all components
+            are kept (equivalent to OLS on standardized data).
+        """
+        self.n_components = n_components
+        self.pca_ = None
+        self.regressor_ = None
+        self.mean_ = None
+        self.std_ = None
+    
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """
+        Fit PCR: standardize X, apply PCA, then fit linear regression on PC scores.
+        
+        Parameters:
+        -----------
+        X : np.ndarray of shape (n_samples, n_features)
+        y : np.ndarray of shape (n_samples,)
+        
+        Returns:
+        --------
+        self
+        """
+        X = np.asarray(X, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64).reshape(-1)
+        
+        # Standardize
+        self.mean_ = np.mean(X, axis=0)
+        self.std_ = np.std(X, axis=0)
+        self.std_[self.std_ == 0] = 1.0  # avoid division by zero
+        X_scaled = (X - self.mean_) / self.std_
+        
+        # PCA
+        n_components = min(self.n_components, X.shape[1]) if self.n_components is not None else X.shape[1]
+        self.pca_ = PCA(n_components=n_components)
+        Z = self.pca_.fit_transform(X_scaled)
+        
+        # Linear regression on PC scores
+        self.regressor_ = LinearRegression()
+        self.regressor_.fit(Z, y)
+        
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions using the fitted PCR model."""
+        X = np.asarray(X, dtype=np.float64)
+        X_scaled = (X - self.mean_) / self.std_
+        Z = self.pca_.transform(X_scaled)
+        return self.regressor_.predict(Z)
+    
+    def score(self, X: np.ndarray, y: np.ndarray) -> float:
+        """Calculate R-squared."""
+        y_pred = self.predict(X)
+        y = np.asarray(y, dtype=np.float64).reshape(-1)
+        sse = np.sum((y - y_pred) ** 2)
+        sst = np.sum((y - np.mean(y)) ** 2)
+        if sst == 0:
+            return 1.0 if sse == 0 else 0.0
+        return 1 - sse / sst
+
+
+def compute_matrix_rank(X: np.ndarray) -> int:
+    """Compute the numerical rank of a matrix using SVD tolerance."""
+    X = np.asarray(X, dtype=np.float64)
+    return np.linalg.matrix_rank(X)
+
+
+def compute_condition_number(X: np.ndarray) -> float:
+    """Compute the condition number of X (ratio of largest to smallest singular value)."""
+    X = np.asarray(X, dtype=np.float64)
+    s = np.linalg.svd(X, compute_uv=False)
+    s_pos = s[s > 1e-12]
+    if len(s_pos) == 0:
+        return np.inf
+    return float(s_pos[0] / s_pos[-1])
+
+
+def compute_coefficient_stability(X: np.ndarray, y: np.ndarray, n_splits: int = 50,
+                                   selected_indices: list = None) -> dict:
+    """
+    Compute the stability of OLS coefficients across multiple random splits.
+    
+    Repeatedly splits data into train sets (80%), fits OLS, and collects coefficients.
+    Returns statistics on coefficient variation.
+    
+    Parameters:
+    -----------
+    X : np.ndarray
+        Feature matrix
+    y : np.ndarray
+        Target vector
+    n_splits : int
+        Number of random splits
+    selected_indices : list, optional
+        Which feature indices to track. If None, tracks first 5.
+    
+    Returns:
+    --------
+    dict with keys: 'coef_trajectories', 'coef_stds', 'selected_indices'
+    """
+    X = np.asarray(X, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64).reshape(-1)
+    n_samples, n_features = X.shape
+    
+    if selected_indices is None:
+        selected_indices = list(range(min(5, n_features)))
+    
+    coef_trajectories = {idx: [] for idx in selected_indices}
+    
+    for split_i in range(n_splits):
+        n_train = int(0.8 * n_samples)
+        indices = np.random.RandomState(split_i).permutation(n_samples)
+        train_idx = indices[:n_train]
+        
+        X_train = X[train_idx]
+        y_train = y[train_idx]
+        
+        model = AnalyticalOLS()
+        model.fit(X_train, y_train)
+        
+        for idx in selected_indices:
+            if idx < len(model.coef_):
+                coef_trajectories[idx].append(float(model.coef_[idx]))
+    
+    coef_stds = {idx: float(np.std(coef_trajectories[idx])) for idx in selected_indices}
+    
+    return {
+        'coef_trajectories': coef_trajectories,
+        'coef_stds': coef_stds,
+        'selected_indices': selected_indices
+    }
