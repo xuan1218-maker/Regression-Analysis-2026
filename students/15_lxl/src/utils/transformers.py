@@ -7,9 +7,10 @@
     fit_transform(X) — fit + transform 一步完成
 """
 import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
 
 
-class CustomStandardScaler:
+class CustomStandardScaler(BaseEstimator, TransformerMixin):
     """手写标准化器 (StandardScaler)。
 
     将每个特征缩放为 均值=0、标准差=1 的分布:
@@ -25,11 +26,12 @@ class CustomStandardScaler:
         self.mean_ = None  # 每个特征的均值
         self.std_ = None   # 每个特征的标准差
 
-    def fit(self, X: np.ndarray) -> "CustomStandardScaler":
+    def fit(self, X: np.ndarray, y=None) -> "CustomStandardScaler":
         """仅计算并保存训练数据的均值和标准差。
 
         参数:
             X: 形状为 (n_samples, n_features) 的特征矩阵。
+            y: 忽略，仅为兼容 sklearn Pipeline 接口。
 
         返回:
             self，支持链式调用。
@@ -55,11 +57,12 @@ class CustomStandardScaler:
         """
         return (X - self.mean_) / self.std_
 
-    def fit_transform(self, X: np.ndarray) -> np.ndarray:
+    def fit_transform(self, X: np.ndarray, y=None) -> np.ndarray:
         """先 fit 再 transform，一步完成。
 
         参数:
             X: 形状为 (n_samples, n_features) 的特征矩阵。
+            y: 忽略，仅为兼容 sklearn Pipeline 接口。
 
         返回:
             标准化后的特征矩阵。

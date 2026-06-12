@@ -1,7 +1,6 @@
 """
 模块：工具.诊断
-用途：模型统计诊断工具
-包含：方差膨胀因子计算、残差图、相关矩阵
+用途：模型诊断工具
 """
 
 import numpy as np
@@ -9,20 +8,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from typing import List, Optional, Tuple
 
+# 图表使用英文，避免中文字体问题
+plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
+
 
 def calculate_vif(X: np.ndarray) -> List[float]:
-    """
-    计算每个特征的方差膨胀因子（VIF）
-    
-    公式：VIF_j = 1 / (1 - R_j^2)
-    其中 R_j^2 是将第 j 个特征作为因变量对其他所有特征做回归得到的拟合优度
-    
-    参数：
-        X: 特征矩阵，形状为 (n_samples, n_features)
-        
-    返回：
-        vif_values: 每个特征的 VIF 值列表
-    """
+    """计算每个特征的方差膨胀因子（VIF）"""
     n_samples, n_features = X.shape
     vif_values = []
     
@@ -48,149 +40,143 @@ def calculate_vif(X: np.ndarray) -> List[float]:
     return vif_values
 
 
-def plot_residuals(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    title: str = "Residuals Diagnostics",
-    save_path: Optional[str] = None,
-    figsize: Tuple[int, int] = (12, 5)
-) -> plt.Figure:
-    """
-    绘制残差诊断图（加分功能）
-    
-    包含：
-    - 残差 vs 拟合值散点图
-    - 残差Q-Q图（正态性检验）
-    - 残差直方图
-    """
-    residuals = y_true - y_pred
-    
-    fig, axes = plt.subplots(1, 3, figsize=figsize)
-    
-    # 1. 残差 vs 拟合值
-    axes[0].scatter(y_pred, residuals, alpha=0.5, edgecolors='none', s=30)
-    axes[0].axhline(y=0, color='r', linestyle='--', linewidth=1)
-    axes[0].set_xlabel('Fitted Values', fontsize=10)
-    axes[0].set_ylabel('Residuals', fontsize=10)
-    axes[0].set_title('Residuals vs Fitted', fontsize=11)
-    
-    # 2. Q-Q图
-    try:
-        from scipy import stats
-        stats.probplot(residuals, dist="norm", plot=axes[1])
-        axes[1].set_title('Q-Q Plot (Normality Check)', fontsize=11)
-        lines = axes[1].get_lines()
-        if len(lines) > 0:
-            lines[0].set_marker('o')
-            lines[0].set_markersize(3)
-            lines[0].set_alpha(0.5)
-    except ImportError:
-        axes[1].text(0.5, 0.5, 'scipy not installed\ncannot draw Q-Q plot', 
-                    ha='center', va='center', transform=axes[1].transAxes)
-        axes[1].set_title('Q-Q Plot (scipy required)', fontsize=11)
-    
-    # 3. 残差直方图
-    axes[2].hist(residuals, bins=30, edgecolor='black', alpha=0.7, color='steelblue')
-    axes[2].axvline(x=0, color='r', linestyle='--', linewidth=1)
-    axes[2].axvline(x=np.mean(residuals), color='orange', linestyle='-', linewidth=1)
-    axes[2].set_xlabel('Residuals', fontsize=10)
-    axes[2].set_ylabel('Frequency', fontsize=10)
-    axes[2].set_title(f'Residuals Distribution\n(mean={np.mean(residuals):.4f}, std={np.std(residuals):.4f})', 
-                      fontsize=11)
-    
-    fig.suptitle(title, fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"残差图已保存至: {save_path}")
-    
-    return fig
-
-
 def plot_correlation_matrix(
     df: pd.DataFrame,
     feature_cols: List[str],
     target_col: str,
     title: str = "Correlation Matrix",
     save_path: Optional[str] = None,
-    figsize: Tuple[int, int] = (12, 10)
+    figsize: Tuple[int, int] = (10, 8)
 ) -> plt.Figure:
-    """
-    绘制相关矩阵热力图（加分功能）
+    """绘制相关矩阵热力图（图中使用英文）"""
     
-    参数：
-        df: 包含特征和目标的DataFrame
-        feature_cols: 特征列名列表
-        target_col: 目标列名
-        title: 图表标题
-        save_path: 保存路径（可选）
-        figsize: 图表大小
-        
-    返回：
-        matplotlib Figure对象
-    """
-    # 选择特征+目标
     plot_cols = feature_cols + [target_col]
     corr_matrix = df[plot_cols].corr()
     
     fig, ax = plt.subplots(figsize=figsize)
     
-    # 绘制热力图
     im = ax.imshow(corr_matrix, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
     
-    # 添加颜色条
     cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-    cbar.set_label('Correlation Coefficient', fontsize=10)
+    cbar.set_label('Correlation', fontsize=10)
     
-    # 设置标签
+    labels = [col.replace('_', ' ') for col in plot_cols]
     ax.set_xticks(range(len(plot_cols)))
     ax.set_yticks(range(len(plot_cols)))
-    ax.set_xticklabels(plot_cols, rotation=45, ha='right', fontsize=9)
-    ax.set_yticklabels(plot_cols, fontsize=9)
+    ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+    ax.set_yticklabels(labels, fontsize=8)
     
-    # 添加数值标注
     for i in range(len(plot_cols)):
         for j in range(len(plot_cols)):
             text_color = "white" if abs(corr_matrix.iloc[i, j]) > 0.5 else "black"
             ax.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}',
-                   ha="center", va="center", 
-                   color=text_color,
-                   fontsize=8)
+                   ha="center", va="center", color=text_color, fontsize=7)
     
     ax.set_title(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"相关矩阵图已保存至: {save_path}")
     
     return fig
 
 
-def analyze_residuals(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+def plot_coefficient_stability(coeffs_dict: dict, feature_names: List[str], 
+                                figsize: tuple = (12, 6), save_path: str = None):
+    """绘制系数稳定性对比箱线图（图中使用英文）"""
+    
+    fig, axes = plt.subplots(1, len(coeffs_dict), figsize=figsize)
+    
+    if len(coeffs_dict) == 1:
+        axes = [axes]
+    
+    for idx, (model_name, coeffs_array) in enumerate(coeffs_dict.items()):
+        n_features_to_show = min(6, coeffs_array.shape[1])
+        
+        data_to_plot = []
+        labels_to_use = []
+        
+        for i in range(n_features_to_show):
+            data_to_plot.append(coeffs_array[:, i])
+            labels_to_use.append(feature_names[i])
+        
+        bp = axes[idx].boxplot(data_to_plot, labels=labels_to_use, patch_artist=True)
+        
+        for box in bp['boxes']:
+            box.set_facecolor('lightblue')
+            box.set_alpha(0.7)
+        
+        axes[idx].set_title(f'{model_name} - Coefficient Stability', fontsize=12)
+        axes[idx].set_xlabel('Features', fontsize=10)
+        axes[idx].set_ylabel('Coefficient Value', fontsize=10)
+        axes[idx].axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        axes[idx].tick_params(axis='x', rotation=45)
+        axes[idx].grid(True, alpha=0.3, axis='y')
+    
+    fig.suptitle('Coefficient Stability Across Random Splits', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    
+    return fig
+
+
+def plot_cv_curves(cv_results_dict: dict, param_name: str = 'alpha', 
+                   figsize: tuple = (10, 6), save_path: str = None):
     """
-    计算残差的统计特征（加分功能）
-    
-    返回：
-        包含残差统计信息的字典
+    绘制交叉验证曲线（U型曲线）
+    注意：scoring='neg_mean_squared_error'，分数越高越好（越接近0）
+    所以 -neg_mse = mse，用于显示真实的MSE
     """
-    residuals = y_true - y_pred
-    standardized_residuals = residuals / np.std(residuals) if np.std(residuals) > 0 else residuals
+    plt.figure(figsize=figsize)
     
-    stats_dict = {
-        'mean': float(np.mean(residuals)),
-        'std': float(np.std(residuals)),
-        'skew': float(pd.Series(residuals).skew()),
-        'kurtosis': float(pd.Series(residuals).kurtosis()),
-        'min': float(np.min(residuals)),
-        'max': float(np.max(residuals)),
-        'q1': float(np.percentile(residuals, 25)),
-        'median': float(np.percentile(residuals, 50)),
-        'q3': float(np.percentile(residuals, 75)),
-        'iqr': float(np.percentile(residuals, 75) - np.percentile(residuals, 25)),
-        'pct_outside_2std': float(np.mean(np.abs(standardized_residuals) > 2) * 100),
-        'pct_outside_3std': float(np.mean(np.abs(standardized_residuals) > 3) * 100),
-    }
+    for model_name, results in cv_results_dict.items():
+        params = results['params']
+        mean_scores = results['mean_scores']  # 这是 neg_mean_squared_error
+        
+        # 转换为正的MSE：MSE = -neg_mean_squared_error
+        mse_values = -mean_scores
+        
+        plt.plot(params, mse_values, marker='o', label=f'{model_name}', linewidth=2)
     
-    return stats_dict
+    plt.xscale('log')
+    plt.xlabel(f'{param_name} (log scale)', fontsize=12)
+    plt.ylabel('Cross-validation MSE', fontsize=12)
+    plt.title('Regularization Strength vs Model Performance (U-shaped Curve)', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=10)
+    plt.grid(True, alpha=0.3)
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    
+    plt.close()
+
+def plot_coefficient_comparison(coeffs_dict: dict, feature_names: List[str],
+                                figsize: tuple = (12, 6), save_path: str = None):
+    """绘制不同模型的系数对比图（图中使用英文）"""
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    x = np.arange(len(feature_names))
+    width = 0.25
+    
+    for idx, (model_name, coeffs) in enumerate(coeffs_dict.items()):
+        offset = (idx - len(coeffs_dict)/2 + 0.5) * width
+        ax.bar(x + offset, coeffs, width, label=model_name, alpha=0.8)
+    
+    ax.set_xlabel('Features', fontsize=12)
+    ax.set_ylabel('Coefficient Value', fontsize=12)
+    ax.set_title('Coefficient Comparison Across Models', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(feature_names, rotation=45, ha='right')
+    ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    
+    return fig

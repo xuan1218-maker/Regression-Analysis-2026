@@ -1,6 +1,6 @@
 """
 模块：utils.models
-核心机器学习模型：解析解OLS（正规方程）和梯度下降OLS。
+核心机器学习模型：解析解OLS（正规方程）、梯度下降OLS、PCR。
 """
 import numpy as np
 from scipy import stats
@@ -174,6 +174,74 @@ class GradientDescentOLS:
         return X @ self.coef_
 
     def score(self, X: np.ndarray, y: np.ndarray) -> float:
+        y_pred = self.predict(X)
+        sse = np.sum((y - y_pred) ** 2)
+        sst = np.sum((y - np.mean(y)) ** 2)
+        return 1 - sse / sst if sst != 0 else 0.0
+
+
+class PCR:
+    """
+    主成分回归 (Principal Component Regression)。
+
+    流程：标准化 -> PCA(保留前k个主成分) -> 线性回归
+    使用 numpy.linalg.svd 实现 PCA，不依赖 sklearn。
+    """
+
+    def __init__(self, n_components: int = 5):
+        self.n_components = n_components
+        self.mean_ = None
+        self.std_ = None
+        self.V_k_ = None        # 前k个右奇异向量 (p, k)
+        self.singular_values_ = None
+        self.coef_ = None        # 在主成分空间中的系数
+        self.intercept_ = 0.0
+        self.explained_variance_ = None
+        self.explained_variance_ratio_ = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """拟合 PCR 模型"""
+        n, p = X.shape
+
+        # 标准化
+        self.mean_ = np.mean(X, axis=0)
+        self.std_ = np.std(X, axis=0)
+        self.std_[self.std_ == 0] = 1.0
+        X_std = (X - self.mean_) / self.std_
+
+        # SVD 分解
+        U, S, Vt = np.linalg.svd(X_std, full_matrices=False)
+
+        # 保留前 k 个主成分
+        k = min(self.n_components, len(S))
+        self.V_k_ = Vt[:k].T  # (p, k)
+        self.singular_values_ = S
+
+        # 解释方差
+        total_var = np.sum(S ** 2) / (n - 1)
+        self.explained_variance_ = (S ** 2) / (n - 1)
+        self.explained_variance_ratio_ = self.explained_variance_ / total_var
+
+        # 投影到主成分空间
+        Z_k = X_std @ self.V_k_  # (n, k)
+
+        # 在主成分空间做 OLS
+        Z_with_intercept = np.column_stack([np.ones(n), Z_k])
+        ols = AnalyticalOLS()
+        ols.fit(Z_with_intercept, y)
+        self.intercept_ = ols.coef_[0]
+        self.coef_ = ols.coef_[1:]
+
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """预测"""
+        X_std = (X - self.mean_) / self.std_
+        Z_k = X_std @ self.V_k_
+        return self.intercept_ + Z_k @ self.coef_
+
+    def score(self, X: np.ndarray, y: np.ndarray) -> float:
+        """R²"""
         y_pred = self.predict(X)
         sse = np.sum((y - y_pred) ** 2)
         sst = np.sum((y - np.mean(y)) ** 2)

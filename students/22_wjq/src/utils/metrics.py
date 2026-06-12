@@ -20,3 +20,4 @@ def calculate_mape(y_true: np.ndarray, y_pred: np.ndarray, epsilon: float = 1e-6
     mask = np.abs(y_true) < epsilon
     y_true_safe = np.where(mask, epsilon, y_true)
     return np.mean(np.abs((y_true - y_pred) / y_true_safe)) * 100
+
