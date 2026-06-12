@@ -75,3 +75,42 @@ class GradientDescentOLS:
         ss_res = np.sum((y - y_pred) ** 2)
         ss_tot = np.sum((y - np.mean(y)) ** 2)
         return 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
+
+
+# ====================== Week13 新增：基于交叉验证的前向特征选择 ======================
+from sklearn.model_selection import KFold
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+def forward_selection_cv(X, y, max_features=4, cv_splits=5):
+    """
+    自主实现带5折CV的前向选择（满足 Week13 工程要求）
+    """
+    selected = []
+    remaining = list(X.columns)
+    kf = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+
+    while remaining and len(selected) < max_features:
+        best_cv_mse = float('inf')
+        best_feat = None
+
+        for feat in remaining:
+            current_feats = selected + [feat]
+            cv_errors = []
+
+            for train_idx, val_idx in kf.split(X):
+                X_tr, X_val = X.iloc[train_idx][current_feats], X.iloc[val_idx][current_feats]
+                y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
+                model = LinearRegression().fit(X_tr, y_tr)
+                cv_errors.append(mean_squared_error(y_val, model.predict(X_val)))
+
+            mean_cv = np.mean(cv_errors)
+            if mean_cv < best_cv_mse:
+                best_cv_mse = mean_cv
+                best_feat = feat
+
+        selected.append(best_feat)
+        remaining.remove(best_feat)
+
+    return selected

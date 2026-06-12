@@ -13,7 +13,7 @@
 #     name: python3
 # ---
 
-# %% [markdown] tags=["meta"]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # # Week 13：正则化回归与变量筛选
 #
 # **主题**：`Ridge`、`Lasso`、`Elastic Net`
@@ -29,7 +29,7 @@
 # - 课堂结构按“看图提问 → 运行代码 → 总结判断”组织；
 # - 当前版本先搭建课堂骨架，后续再继续细化数据、图像与脚本。
 
-# %% [markdown]
+# %% [markdown] editable=true slideshow={"slide_type": "slide"} tags=["slide"]
 # ## Prologue：为什么我们还要继续折腾线性模型？
 #
 # 上节课我们讲了 Bias-Variance Trade-off。
@@ -47,20 +47,20 @@
 # - penalty 如何改变模型；
 # - 为什么不同正则化方法会给出不同的变量行为。
 
-# %% [markdown] tags=["script", "teacher-only"]
+# %% [markdown] editable=true slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这一节的节奏建议：
 # - 第一幕先立住“OLS 不是错，而是不够稳”；
 # - 不要急着讲公式推导，先让“不稳定”这件事被看见；
 # - 之后每一幕都尽量围绕一张主图展开。
 
-# %% [markdown]
+# %% [markdown] editable=true slideshow={"slide_type": "slide"} tags=["slide"]
 # ---
 # ## 第一幕：OLS 还不够——为什么模型需要“约束”？
 #
 # 这一幕只做一件事：
 # **先接受一个判断：在相关特征存在时，OLS 的结论可能不够稳。**
 
-# %% [markdown] tags=["prompt"]
+# %% [markdown] editable=true slideshow={"slide_type": "slide"} tags=["slide"]
 # 如果你要把一个回归模型交给业务团队长期使用，你更担心哪一件事？
 #
 # 1. 训练误差还不够低；
@@ -68,7 +68,7 @@
 #
 # 先不要运行代码，先凭直觉选一个。
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] editable=true slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图**：OLS 系数不稳定图
 #
 # 这张图要回答：
@@ -76,14 +76,14 @@
 #
 # 这里用“多次切分下的 OLS 系数波动”来把“不稳定”直接画出来。
 
-# %%
+# %% editable=true slideshow={"slide_type": "skip"} tags=["skip"]
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import patches
-from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -134,6 +134,89 @@ def rmse(y_true, y_pred):
     return np.sqrt(mean_squared_error(y_true, y_pred))
 
 
+def plot_regularization_paths(ax_left, ax_right, alphas, ridge_coefs, lasso_coefs):
+    log_alphas_desc = np.log10(alphas[::-1])
+    for i, feature_name in enumerate(FEATURE_NAMES):
+        ax_left.plot(log_alphas_desc, ridge_coefs[::-1, i], label=feature_name)
+        ax_right.plot(log_alphas_desc, lasso_coefs[::-1, i], label=feature_name)
+
+
+def add_structure_box(ax, xy, width, height, facecolor, edgecolor):
+    patch = patches.FancyBboxPatch(
+        xy,
+        width,
+        height,
+        boxstyle="round,pad=0.2",
+        facecolor=facecolor,
+        edgecolor=edgecolor,
+        linewidth=2,
+    )
+    ax.add_patch(patch)
+
+
+def draw_loss_penalty_diagram(ax):
+    add_structure_box(ax, (0.8, 1.35), 2.5, 1.2, "#dbeafe", "#2563eb")
+    add_structure_box(ax, (4.0, 1.35), 2.5, 1.2, "#fee2e2", "#dc2626")
+    total_box = patches.FancyBboxPatch(
+        (7.2, 1.1),
+        2.0,
+        1.7,
+        boxstyle="round,pad=0.25",
+        facecolor="#ecfccb",
+        edgecolor="#65a30d",
+        linewidth=2.2,
+    )
+    ax.add_patch(total_box)
+
+    ax.text(2.05, 1.95, "loss", ha="center", va="center", fontsize=18, weight="bold", color="#1d4ed8")
+    ax.text(2.05, 1.45, "fit the data", ha="center", va="center", fontsize=12)
+    ax.text(5.25, 1.95, "penalty", ha="center", va="center", fontsize=18, weight="bold", color="#b91c1c")
+    ax.text(5.25, 1.45, "control coefficient size", ha="center", va="center", fontsize=12)
+    ax.text(8.2, 2.0, "objective", ha="center", va="center", fontsize=17, weight="bold", color="#3f6212")
+    ax.text(8.2, 1.5, "loss + penalty", ha="center", va="center", fontsize=13)
+    ax.text(3.55, 1.95, "+", fontsize=24, weight="bold", ha="center", va="center")
+    ax.annotate("same model family", xy=(2.05, 2.85), xytext=(5.25, 3.35), arrowprops=dict(arrowstyle="->", lw=1.8))
+    ax.annotate(
+        "pay some fit to gain control",
+        xy=(5.3, 1.0),
+        xytext=(7.55, 0.4),
+        arrowprops=dict(arrowstyle="->", lw=1.8),
+    )
+
+
+def top_k_forward_selection(X_df, y_vec, k):
+    remaining = list(X_df.columns)
+    selected = []
+    for _ in range(k):
+        best_feature = None
+        best_score = np.inf
+        for feature in remaining:
+            trial_features = selected + [feature]
+            score = evaluate_feature_subset(X_df, y_vec, trial_features)
+            if score < best_score:
+                best_score = score
+                best_feature = feature
+        selected.append(best_feature)
+        remaining.remove(best_feature)
+    return selected
+
+
+def top_k_backward_selection(X_df, y_vec, k):
+    selected = list(X_df.columns)
+    while len(selected) > k:
+        best_features = None
+        best_score = np.inf
+        for feature in selected:
+            trial_features = [f for f in selected if f != feature]
+            score = evaluate_feature_subset(X_df, y_vec, trial_features)
+            if score < best_score:
+                best_score = score
+                best_features = trial_features
+        selected = best_features
+    return selected
+
+
+# %% editable=true slideshow={"slide_type": "skip"} tags=["skip"]
 X, y = make_correlated_regression_data()
 
 n_repeats = 80
@@ -150,6 +233,7 @@ coef_df = pd.DataFrame(coef_records)
 feature_order = FEATURE_NAMES
 positions = np.arange(len(feature_order))
 
+# %% slideshow={"slide_type": "-"} editable=true
 fig, ax = plt.subplots(figsize=(11, 6))
 for idx, feature in enumerate(feature_order):
     feature_values = coef_df.loc[
@@ -182,31 +266,31 @@ ax.set_xlabel("feature")
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["takeaway"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # OLS 的问题不是“完全不能用”，而是：
 #
 # - 当特征相关、样本扰动存在时，系数可能明显波动；
 # - 这意味着训练集上拟合得不错，并不代表模型结论足够稳定；
 # - 所以今天我们要讨论的，不是“换一个完全不同的模型”，而是“怎样给模型加约束”。
 
-# %% [markdown] tags=["script", "teacher-only"]
+# %% [markdown] slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这里先把 stakes 立住，不急着进入术语。
 # 如果现场对“不稳定”这件事还不够敏感，可以追问：
 # “如果这周说价格重要，下周说广告重要，这个模型你敢交给老板吗？”
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ---
 # ## 第二幕：统一框架——`loss + penalty`
 #
 # 这一幕要建立一个统一语言：
 # **正则化不是另起炉灶，而是在原来的拟合目标里，显式加入复杂度成本。**
 
-# %% [markdown] tags=["prompt"]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # 如果我们已经能最小化误差，为什么还要故意给模型“加限制”？
 #
 # 你愿不愿意为了更稳，牺牲一点训练集上的贴合度？
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图**：`loss + penalty` 的结构图
 #
 # 这张图要回答：
@@ -214,96 +298,18 @@ plt.show()
 #
 # 这里用一张板书式结构图，把 `loss` 和 `penalty` 的职责拆开。
 
-# %%
+# %% tags=["hide-input"]
 fig, ax = plt.subplots(figsize=(12, 4.8))
 ax.set_xlim(0, 10)
 ax.set_ylim(0, 4)
 ax.axis("off")
-
-loss_box = patches.FancyBboxPatch(
-    (0.8, 1.35),
-    2.5,
-    1.2,
-    boxstyle="round,pad=0.2",
-    facecolor="#dbeafe",
-    edgecolor="#2563eb",
-    linewidth=2,
-)
-penalty_box = patches.FancyBboxPatch(
-    (4.0, 1.35),
-    2.5,
-    1.2,
-    boxstyle="round,pad=0.2",
-    facecolor="#fee2e2",
-    edgecolor="#dc2626",
-    linewidth=2,
-)
-total_box = patches.FancyBboxPatch(
-    (7.2, 1.1),
-    2.0,
-    1.7,
-    boxstyle="round,pad=0.25",
-    facecolor="#ecfccb",
-    edgecolor="#65a30d",
-    linewidth=2.2,
-)
-
-for patch in [loss_box, penalty_box, total_box]:
-    ax.add_patch(patch)
-
-ax.text(
-    2.05,
-    1.95,
-    "loss",
-    ha="center",
-    va="center",
-    fontsize=18,
-    weight="bold",
-    color="#1d4ed8",
-)
-ax.text(2.05, 1.45, "fit the data", ha="center", va="center", fontsize=12)
-ax.text(
-    5.25,
-    1.95,
-    "penalty",
-    ha="center",
-    va="center",
-    fontsize=18,
-    weight="bold",
-    color="#b91c1c",
-)
-ax.text(5.25, 1.45, "control coefficient size", ha="center", va="center", fontsize=12)
-ax.text(
-    8.2,
-    2.0,
-    "objective",
-    ha="center",
-    va="center",
-    fontsize=17,
-    weight="bold",
-    color="#3f6212",
-)
-ax.text(8.2, 1.5, "loss + penalty", ha="center", va="center", fontsize=13)
-
-ax.text(3.55, 1.95, "+", fontsize=24, weight="bold", ha="center", va="center")
-ax.annotate(
-    "same model family",
-    xy=(2.05, 2.85),
-    xytext=(5.25, 3.35),
-    arrowprops=dict(arrowstyle="->", lw=1.8),
-)
-ax.annotate(
-    "pay some fit to gain control",
-    xy=(5.3, 1.0),
-    xytext=(7.55, 0.4),
-    arrowprops=dict(arrowstyle="->", lw=1.8),
-)
+draw_loss_penalty_diagram(ax)
 ax.set_title("正则化不是另起炉灶，而是在 loss 外显式加入复杂度成本", pad=14)
 
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["takeaway"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # 正则化回归的共同语言是：
 #
 # `objective = loss + penalty`
@@ -313,18 +319,18 @@ plt.show()
 # - `penalty` 负责约束复杂度；
 # - 后面三种方法的真正差异，不在于“是不是回归”，而在于“怎样约束系数”。
 
-# %% [markdown] tags=["script", "teacher-only"]
+# %% [markdown] slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这一幕不要展开太多优化细节。
 # 任务只有一个：把“正则化 = 显式付出复杂度成本”这个判断立住。
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ---
 # ## 第三幕：Ridge vs Lasso——同样收缩，为什么一个保留全部、一个开始筛选？
 #
 # 这是全节课最重要的视觉对比幕。
 # 主图负责展示系数路径差异，辅图负责把路径变化连接回 bias-variance / 稳定性主线。
 
-# %% [markdown] tags=["prompt"]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # 看图之前先猜：
 #
 # 如果我们不断增大 penalty，下面两种现象你觉得哪一个更可能出现？
@@ -334,7 +340,7 @@ plt.show()
 #
 # 你觉得这两种行为，对业务上的“变量名单”意味着什么不同？
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图**：`Ridge` 与 `Lasso` 的 regularization path 并排对比图
 #
 # 这张图要回答：
@@ -345,7 +351,7 @@ plt.show()
 # - `Lasso` regularization path；
 # - 并保留一组强相关特征，为后续 `Elastic Net` 铺垫。
 
-# %%
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 X_path, y_path = make_correlated_regression_data(
     n_samples=220, noise_std=1.0, seed=RANDOM_SEED
 )
@@ -379,11 +385,9 @@ for alpha in alphas:
 ridge_coefs = np.array(ridge_coefs)
 lasso_coefs = np.array(lasso_coefs)
 
+# %% tags=["hide-input"]
 fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), sharey=True)
-log_alphas_desc = np.log10(alphas[::-1])
-for i, feature_name in enumerate(FEATURE_NAMES):
-    axes[0].plot(log_alphas_desc, ridge_coefs[::-1, i], label=feature_name)
-    axes[1].plot(log_alphas_desc, lasso_coefs[::-1, i], label=feature_name)
+plot_regularization_paths(axes[0], axes[1], alphas, ridge_coefs, lasso_coefs)
 
 axes[0].set_title("Ridge：penalty 越强，系数越一起向 0 收缩")
 axes[1].set_title("Lasso：penalty 越强，部分变量会被压到 0")
@@ -398,7 +402,7 @@ fig.suptitle(
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕辅图**：Bias-Variance 权衡中的动图或稳定性辅助图
 #
 # 这张辅图要回答：
@@ -406,7 +410,7 @@ plt.show()
 #
 # 这里用“系数波动 + 误差变化”的辅助图，把路径变化重新连接回“variance 下降、模型更稳”的主线。
 
-# %%
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 stability_alphas = np.logspace(-4, 3, 16)
 repeated_splits = range(45)
 records = []
@@ -442,6 +446,7 @@ for alpha in stability_alphas:
 
 stability_df = pd.DataFrame(records)
 
+# %% tags=["hide-input"]
 fig, ax1 = plt.subplots(figsize=(10.5, 6))
 ax2 = ax1.twinx()
 
@@ -480,27 +485,27 @@ ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper center")
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["takeaway"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # 这一幕至少要收住三个判断：
 #
 # - `Ridge` 的强项是稳定收缩，不是变量筛选；
 # - `Lasso` 的强项是稀疏与筛选，但这也意味着变量名单会变化；
 # - penalty 不是白加的：它的代价是牺牲一部分贴合度，换来更保守、更稳定的模型行为。
 
-# %% [markdown] tags=["script", "teacher-only"]
+# %% [markdown] slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这一幕不要陷入公式细节。
 # 重点是先从图上读出“模型性格”。
 # 如果时间允许，再追问：
 # “业务上你要的是更稳，还是更短的变量名单？”
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ## Synthesis 1
 #
 # 到这里，前半节课可以被压缩成一句话：
 #
 # > 正则化不是在背三个新名词，而是在同一个优化框架下，用不同 penalty 交换不同的模型性格。
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ---
 # ## 第四幕：Elastic Net——当变量高度相关时，折中为什么更成熟？
 #
@@ -508,7 +513,7 @@ plt.show()
 # 但如果变量彼此相关、成组出现，问题就变成：
 # **只留一个代表，真的总是合理吗？**
 
-# %% [markdown] tags=["prompt"]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # 如果两列变量其实表达的是相近信息，模型只留下其中一个，你会觉得这个结果：
 #
 # 1. 很干脆，很好；
@@ -516,7 +521,7 @@ plt.show()
 #
 # 先选一个立场，再看图。
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图**：`Lasso` 与 `Elastic Net` 在相关变量场景下的路径对比图
 #
 # 这张图要回答：
@@ -524,9 +529,7 @@ plt.show()
 #
 # 这里直接比较 `Lasso` 与 `Elastic Net` 的路径，并高亮相关变量组的行为差异。
 
-# %%
-from sklearn.linear_model import ElasticNet
-
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 elastic_alphas = np.logspace(-3, 1.0, 55)
 lasso_group_coefs = []
 elastic_group_coefs = []
@@ -562,6 +565,7 @@ for alpha in elastic_alphas:
 lasso_group_coefs = np.array(lasso_group_coefs)
 elastic_group_coefs = np.array(elastic_group_coefs)
 
+# %% tags=["hide-input"]
 fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), sharey=True)
 for i, feature_name in enumerate(FEATURE_NAMES):
     line_alpha = 1.0 if i < 3 else 0.45
@@ -591,14 +595,14 @@ fig.suptitle(
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕辅图**：Elastic Net 参数角色的辅助说明图或小表
 #
 # 这张辅图只做说明：
 # - 一个参数控制总体惩罚强度；
 # - 一个参数控制更偏向 `Lasso` 还是更偏向 `Ridge`。
 
-# %%
+# %% tags=["hide-input"]
 param_summary = pd.DataFrame(
     {
         "parameter": ["alpha", "l1_ratio"],
@@ -615,19 +619,19 @@ param_summary = pd.DataFrame(
 
 param_summary
 
-# %% [markdown] tags=["takeaway"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # `Elastic Net` 的价值不在于“又多了一个名词”，而在于：
 #
 # - 当变量成组相关时，纯 `Lasso` 可能显得过于武断；
 # - `Elastic Net` 提供了“既想筛选，又不想过度丢掉相关信息”的折中；
 # - 所以方法选择不能只看谁更稀疏，还要看数据结构是否支持这种稀疏。
 
-# %% [markdown] tags=["script", "teacher-only"]
+# %% [markdown] slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这一幕的重点是“相关变量成组”的现实感。
 # 不要把时间花在复杂公式上，而是要把一个现实感立住：
 # 现实问题里，很多变量不是单打独斗出现的。
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ---
 # ## 第五幕：会用比会看更重要——`GridSearchCV` 如何帮我们选 `alpha`？
 #
@@ -635,12 +639,12 @@ param_summary
 # 这一幕要回答的是：
 # **那到底该选多大的 penalty？**
 
-# %% [markdown] tags=["prompt"]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # 如果一个模型更稀疏、变量更少，我们就应该优先选它吗？
 #
 # 还是说，真正该看的不是“看起来够简洁”，而是“在验证里表现如何”？
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图**：`GridSearchCV` / CV 分数随 `alpha` 变化的主图
 #
 # 这张图要回答：
@@ -648,10 +652,7 @@ param_summary
 #
 # 这里直接展示 `GridSearchCV` 搜索结果，让最低点而不是“最强惩罚”成为视觉焦点。
 
-# %%
-from sklearn.linear_model import ElasticNet
-from sklearn.model_selection import GridSearchCV, KFold
-
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 cv = KFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
 search_alphas = np.logspace(-4, 3, 60)
 
@@ -702,6 +703,7 @@ for model_name, config in search_spaces.items():
     search.fit(X_path, y_path)
     search_results[model_name] = search
 
+# %% tags=["hide-input"]
 fig, axes = plt.subplots(3, 1, figsize=(10.5, 9), sharex=True)
 colors = {"Ridge": "#2563eb", "Lasso": "#dc2626", "Elastic Net": "#16a34a"}
 
@@ -740,7 +742,7 @@ fig.suptitle(
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # ###### **本幕辅图（可选）**：最终模型对比结果表
 #
 # 如果保留，这张辅图只做总结：
@@ -748,7 +750,7 @@ plt.show()
 # - 哪个模型更偏向变量筛选；
 # - 哪个模型在相关变量场景下更稳健。
 
-# %%
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 summary_rows = []
 for model_name, search in search_results.items():
     best_model = search.best_estimator_
@@ -777,20 +779,22 @@ for model_name, search in search_results.items():
 summary_table = (
     pd.DataFrame(summary_rows).sort_values("best_cv_rmse").reset_index(drop=True)
 )
+
+# %% tags=["hide-input"]
 summary_table.style.hide(axis="index")
 
-# %% [markdown] tags=["takeaway"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # 这一幕要收住两个判断：
 #
 # - `alpha` 不能靠肉眼挑，而要通过交叉验证来选；
 # - 最稀疏不一定最好，最强惩罚也不一定最好。
 
-# %% [markdown] tags=["script", "teacher-only"]
+# %% [markdown] slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这幕的语气要“降温”：
 # - 前面已经看了很多漂亮路径图；
 # - 这里要提醒大家，最后真正决定模型选择的，是验证表现和任务目标。
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ---
 # ## 第六幕：变量选择
 #
@@ -805,7 +809,7 @@ summary_table.style.hide(axis="index")
 # 它们不是本周的主角，但这里需要知道：
 # **变量选择并不只有 Lasso 一条路。**
 
-# %% [markdown] tags=["prompt"]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # 如果老板说：“我不要 20 个变量，我只要 4 个。”
 #
 # 你觉得更自然的做法是哪一种？
@@ -816,7 +820,7 @@ summary_table.style.hide(axis="index")
 #
 # 这三种思路，你觉得分别会有什么优点和代价？
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图 1**：前向选择 vs 后向剔除 的变量进入/退出路径
 #
 # 这张图要回答：
@@ -830,7 +834,7 @@ summary_table.style.hide(axis="index")
 # 先看“路径”，不要急着背定义。
 
 
-# %%
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 def evaluate_feature_subset(X_df, y_vec, selected_features):
     if len(selected_features) == 0:
         baseline = np.full_like(y_vec, y_vec.mean(), dtype=float)
@@ -890,6 +894,7 @@ for step in range(len(FEATURE_NAMES) - 1):
 forward_df = pd.DataFrame(forward_records)
 backward_df = pd.DataFrame(backward_records)
 
+# %% tags=["hide-input"]
 fig, axes = plt.subplots(1, 2, figsize=(14.5, 5.8), sharey=True)
 axes[0].plot(
     forward_df["step"], forward_df["rmse"], marker="o", color="#2563eb", linewidth=2.5
@@ -930,7 +935,7 @@ fig.suptitle("同样是“变量选择”，前向与后向会走出不同搜索
 plt.tight_layout()
 plt.show()
 
-# %% [markdown] tags=["stage"]
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # **本幕主图 2**：Lasso / 前向选择 / 后向剔除 的最终变量名单对比
 #
 # 这张图要回答：
@@ -942,39 +947,7 @@ plt.show()
 # - 稀疏结果很有吸引力，但它并不是唯一答案。
 
 
-# %%
-def top_k_forward_selection(X_df, y_vec, k):
-    remaining = list(X_df.columns)
-    selected = []
-    for _ in range(k):
-        best_feature = None
-        best_score = np.inf
-        for feature in remaining:
-            trial_features = selected + [feature]
-            score = evaluate_feature_subset(X_df, y_vec, trial_features)
-            if score < best_score:
-                best_score = score
-                best_feature = feature
-        selected.append(best_feature)
-        remaining.remove(best_feature)
-    return selected
-
-
-def top_k_backward_selection(X_df, y_vec, k):
-    selected = list(X_df.columns)
-    while len(selected) > k:
-        best_features = None
-        best_score = np.inf
-        for feature in selected:
-            trial_features = [f for f in selected if f != feature]
-            score = evaluate_feature_subset(X_df, y_vec, trial_features)
-            if score < best_score:
-                best_score = score
-                best_features = trial_features
-        selected = best_features
-    return selected
-
-
+# %% slideshow={"slide_type": "skip"} tags=["skip"]
 lasso_best = search_results["Lasso"].best_estimator_
 lasso_nonzero = [
     FEATURE_NAMES[i]
@@ -993,6 +966,7 @@ selection_matrix = pd.DataFrame(
     }
 )
 
+# %% tags=["hide-input"]
 fig, ax = plt.subplots(figsize=(11.2, 5.8))
 heatmap_data = selection_matrix[["Lasso", "Forward", "Backward"]].to_numpy()
 im = ax.imshow(heatmap_data, cmap="Blues", aspect="auto", vmin=0, vmax=1)
@@ -1021,8 +995,8 @@ ax.set_title("不同变量选择方法，最后留下的变量名单可能并不
 plt.tight_layout()
 plt.show()
 
-# %% [markdown]
-# ### 变量选择方法怎么做？看什么标准？优点和代价是什么？
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
+# ### 变量选择方法怎么做？先看它们在追什么
 #
 # **标准看什么？**
 # - 在今天这个 notebook 里，为了把机制讲清，我们用的是误差表现（这里用 RMSE）来比较；
@@ -1033,11 +1007,17 @@ plt.show()
 # - **怎么做**：从空模型开始，每一步加入一个最能改善评价指标的变量；
 # - **优点**：直观、容易讲清“变量是怎么一步步进来的”；当变量很多时，通常比穷举更省；
 # - **劣势**：一旦前面加错，后面路径就会被带偏；已经加入的变量通常不容易被重新审视。
+
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
+# ### 变量选择方法怎么做？再看删法与折中法
 #
 # **后向剔除（Backward Elimination）**
 # - **怎么做**：从全模型开始，每一步删掉一个最不伤害评价指标的变量；
 # - **优点**：一开始看的是“完整信息”，适合在变量数不太大时做精简；
 # - **劣势**：变量很多时计算成本会高；如果变量间高度相关，删谁留谁可能会很敏感。
+#
+# %% [markdown] slideshow={"slide_type": "subslide"} tags=["sub-slide"]
+# ### 双向逐步回归怎么理解
 #
 # **双向逐步回归（Stepwise Selection）**
 # - **怎么做**：可以看作“前向 + 后向”的折中版；
@@ -1047,7 +1027,7 @@ plt.show()
 # - **优点**：比纯前向更灵活，因为“加进来以后也允许后悔”；
 # - **劣势**：本质上仍然是逐步搜索，所以仍受评价标准、变量相关性和路径依赖影响，结果也不一定稳定。
 
-# %% [markdown] tags=["takeaway"] jupyter={"source_hidden": true}
+# %% [markdown] jupyter={"source_hidden": true} slideshow={"slide_type": "subslide"} tags=["sub-slide"]
 # 这一幕要收住四个判断：
 #
 # - 变量选择不只有 `Lasso`，还可以有前向选择、后向剔除等经典做法；
@@ -1055,13 +1035,13 @@ plt.show()
 # - 它们的代价是路径依赖、计算代价上升，而且结果可能不稳定；
 # - 所以变量选择是“建模策略选择”，不是自动抽取真理。
 
-# %% [markdown] tags=["script", "teacher-only"] jupyter={"source_hidden": true}
+# %% [markdown] jupyter={"source_hidden": true} slideshow={"slide_type": "skip"} tags=["script", "skip"]
 # 这一幕不要把重点放在算法细节推导上。
 # 更重要的是把方法地图立起来：
 # - Lasso：把筛选写进优化问题；
 # - Forward / Backward：把筛选写成逐步搜索过程；
 # - 三者都能给名单，但名单不等于因果真相。
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ## Synthesis 2
 #
 # 到这里，可以把三种方法压缩成一个判断框架：
@@ -1072,7 +1052,7 @@ plt.show()
 # - 最后到底选哪个，不靠直觉，而要回到交叉验证结果；
 # - 而即便变量被选中了，也不自动等于“它拥有因果解释地位”。
 
-# %% [markdown]
+# %% [markdown] slideshow={"slide_type": "slide"} tags=["slide"]
 # ## Transition
 #
 # 现在我们已经知道：
