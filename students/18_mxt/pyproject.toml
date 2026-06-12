@@ -1,0 +1,14 @@
+[project]
+name = "mxt-regression-homework"
+version = "0.1.0"
+description = "Regression analysis homework workspace for MXT"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+]
+
+[tool.uv]
+package = false

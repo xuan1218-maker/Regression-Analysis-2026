@@ -25,3 +25,26 @@ def calculate_vif(X: np.ndarray) -> list:
         vif_results.append(round(vif, 2))
 
     return vif_results
+
+
+# ====================== Week14: matrix and stability diagnostics ======================
+def matrix_rank(X: np.ndarray, tol: float | None = None) -> int:
+    """Return numerical rank of a design matrix."""
+    X_arr = np.asarray(X, dtype=float)
+    return int(np.linalg.matrix_rank(X_arr, tol=tol))
+
+
+def condition_number(X: np.ndarray, eps: float = 1e-12) -> float:
+    """Return a stable condition-number diagnostic based on singular values."""
+    X_arr = np.asarray(X, dtype=float)
+    singular_values = np.linalg.svd(X_arr, compute_uv=False)
+    if singular_values.size == 0 or singular_values[-1] < eps:
+        return float("inf")
+    return float(singular_values[0] / singular_values[-1])
+
+
+def coefficient_stability(coef_matrix: np.ndarray) -> np.ndarray:
+    """Column-wise coefficient standard deviation across repeated fits."""
+    coef_arr = np.asarray(coef_matrix, dtype=float)
+    return np.std(coef_arr, axis=0, ddof=1)
+
