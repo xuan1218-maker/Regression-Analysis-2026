@@ -1,5 +1,10 @@
 import numpy as np
 from scipy import stats
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
+from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.model_selection import train_test_split
+from utils.transformers import CustomStandardScaler
 
 class AnalyticalOLS:
     """解析解 OLS，支持截距选项"""
@@ -101,3 +106,49 @@ class GradientDescentOLS:
         sse = np.sum((y - y_pred)**2)
         sst = np.sum((y - np.mean(y))**2)
         return 1 - sse/sst if sst != 0 else 0.0
+    
+class PCRRegressor(BaseEstimator, RegressorMixin):
+    """主成分回归 (PCR) 封装，使用 CustomStandardScaler 标准化"""
+    def __init__(self, n_components=2):
+        self.n_components = n_components
+
+    def fit(self, X, y):
+        self.scaler_ = CustomStandardScaler()
+        X_scaled = self.scaler_.fit_transform(X)
+        self.pca_ = PCA(n_components=self.n_components)
+        scores = self.pca_.fit_transform(X_scaled)
+        self.reg_ = LinearRegression()
+        self.reg_.fit(scores, y)
+        # 将系数映射回原始尺度（用于解释）
+        self.coef_ = (self.pca_.components_.T @ self.reg_.coef_) / self.scaler_.std_
+        return self
+
+    def predict(self, X):
+        X_scaled = self.scaler_.transform(X)
+        scores = self.pca_.transform(X_scaled)
+        return self.reg_.predict(scores)
+
+def repeated_ols_coefficients(X, y, n_repeats=60, test_size=0.3, random_seed=42):
+    """重复切分 OLS 系数波动（用于稳定性分析）"""
+    import pandas as pd
+    from sklearn.linear_model import LinearRegression
+    from sklearn.model_selection import train_test_split
+    records = []
+    cond_numbers = []
+    for split_seed in range(n_repeats):
+        X_train, _, y_train, _ = train_test_split(
+            X, y, test_size=test_size, random_state=split_seed
+        )
+        scaler = CustomStandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        model = LinearRegression()
+        model.fit(X_train_scaled, y_train)
+        singular_values = np.linalg.svd(X_train_scaled, full_matrices=False)[1]
+        cond_numbers.append(singular_values[0] / singular_values[-1])
+        for feature_idx, coef in enumerate(model.coef_):
+            records.append({
+                "split": split_seed,
+                "feature": f"x{feature_idx + 1}",
+                "coefficient": coef,
+            })
+    return pd.DataFrame(records), float(np.mean(cond_numbers))
