@@ -123,6 +123,23 @@ Notebook responsibilities:
 4. preserve teacher-only script notes when needed;
 5. keep text short and stage-like.
 
+## Directory Chapter Rule
+For major classroom notebooks, include a short visible **目录 / roadmap chapter** near the beginning.
+
+Its purpose is to:
+- tell the audience how many major scenes the class will have;
+- briefly state what each scene is about;
+- help the instructor verbally connect the scenes into one narrative chain.
+
+This directory chapter should be short and high-level:
+- do not turn it into full notes;
+- do not repeat all later detail;
+- do make the transitions legible enough that the instructor can say “先做什么，再做什么，为什么这样接”.
+
+Typical placement:
+- after `meta`;
+- before or immediately after `prologue`.
+
 ## Cell Taxonomy
 Every major notebook should use these 5 core cell roles.
 Each role maps to a reveal.js structural tag (see [Required Tags](#required-tags)).
@@ -312,9 +329,16 @@ Avoid teacher-internal formulations such as:
 ## Formalization Rule
 The notebook should not stop at intuition when the topic has a standard mathematical definition.
 
-After the main visual or empirical event, add a short visible markdown cell that:
+When a new formal object is central to the next few slides, its explicit definition should appear **early enough** that the audience knows what object is being discussed.
+
+In practice this means:
+- sometimes the definition should appear right after the first intuition;
+- sometimes it should appear immediately before the main figure if the figure is really about properties of that definition;
+- do not postpone the definition until after a long discussion of its properties.
+
+At minimum, add a short visible markdown cell that:
 - writes the core formula or definition;
-- maps symbols back to the just-seen plot/table/demo;
+- maps symbols back to the just-seen or immediately upcoming plot/table/demo;
 - explains what part of the intuition the formula is formalizing.
 
 Typical examples:
@@ -323,7 +347,7 @@ Typical examples:
 - after a PCR performance plot, write the “PCA scores + regression” pipeline in symbols.
 
 The goal is not to turn the slide into a proof.
-The goal is to explicitly connect “what we saw” and “what the formal definition says”.
+The goal is to explicitly connect “what we saw” and “what the formal definition says”, without making the audience wait too long to find out what the object actually is.
 
 ## Narrative Arc Design Rule
 A classroom notebook is not a flat list of demos.
@@ -420,19 +444,21 @@ Recommended high-level structure:
 
 ```text
 00_meta                                                     [slide]
-00_prologue (stakes, business scenario)                     [slide]
-01_scene_1 (title/prompt → stage → formalize → takeaway)   [slide → sub-slide → sub-slide → fragment]
-02_scene_2
-03_scene_3
-04_synthesis_1 (cognitive anchor)                           [slide]
-05_scene_4
-06_scene_5
-07_scene_6
-08_synthesis_2 (final synthesis)                            [slide]
-09_transition (natural question → next topic)               [slide]
+00_directory (how many scenes, how they connect)            [slide]
+01_prologue (stakes, business scenario)                     [slide]
+02_scene_1 (title/prompt → stage → formalize → takeaway)   [slide → sub-slide → sub-slide → fragment]
+03_scene_2
+04_scene_3
+05_synthesis_1 (cognitive anchor)                           [slide]
+06_scene_4
+07_scene_5
+08_scene_6
+09_synthesis_2 (final synthesis)                            [slide]
+10_transition (natural question → next topic)               [slide]
 ```
 
 The exact number of scenes can vary by module content, but the arc should always include:
+- a directory / roadmap chapter;
 - a prologue;
 - at least one synthesis section;
 - a final synthesis that collects all takeaways;
