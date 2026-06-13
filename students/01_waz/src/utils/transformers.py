@@ -112,3 +112,18 @@ class CustomNumericImputer:
 
     def fit_transform(self, X, y=None):
         return self.fit(X, y=y).transform(X)
+
+
+# ---------------------------------------------------------------------------
+# Week 14: convenience wrapper for train/test standardization
+# ---------------------------------------------------------------------------
+
+def standardize_train_test(
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, CustomStandardScaler]:
+    """Fit scaler on X_train, transform both X_train and X_test."""
+    scaler = CustomStandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_test_scaled, scaler
