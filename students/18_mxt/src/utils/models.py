@@ -114,3 +114,40 @@ def forward_selection_cv(X, y, max_features=4, cv_splits=5):
         remaining.remove(best_feat)
 
     return selected
+
+
+# ====================== Week14: PCA/PCR helpers ======================
+from sklearn.decomposition import PCA
+
+from .transformers import CustomStandardScaler
+
+
+class PCRRegressor:
+    """Principal Component Regression workflow: scale -> PCA -> OLS."""
+
+    def __init__(self, n_components: int):
+        self.n_components = n_components
+        self.scaler_ = None
+        self.pca_ = None
+        self.regressor_ = None
+
+    def fit(self, X, y):
+        X_arr = np.asarray(X, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+        self.scaler_ = CustomStandardScaler()
+        X_scaled = self.scaler_.fit_transform(X_arr)
+        self.pca_ = PCA(n_components=self.n_components)
+        Z = self.pca_.fit_transform(X_scaled)
+        self.regressor_ = LinearRegression().fit(Z, y_arr)
+        return self
+
+    def predict(self, X):
+        X_arr = np.asarray(X, dtype=float)
+        X_scaled = self.scaler_.transform(X_arr)
+        Z = self.pca_.transform(X_scaled)
+        return self.regressor_.predict(Z)
+
+    @property
+    def explained_variance_ratio_(self):
+        return self.pca_.explained_variance_ratio_
+
