@@ -180,3 +180,46 @@ def plot_coefficient_comparison(coeffs_dict: dict, feature_names: List[str],
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
     
     return fig
+
+
+
+
+# src/utils/diagnostics.py (末尾添加)
+"""
+模块：工具.诊断
+用途：模型诊断工具 - 新增矩阵病态诊断
+"""
+
+def compute_condition_number(X: np.ndarray) -> float:
+    """计算矩阵的条件数，评估病态程度"""
+    X_center = X - np.mean(X, axis=0)
+    _, S, _ = np.linalg.svd(X_center, full_matrices=False)
+    return S[0] / S[-1] if S[-1] > 1e-10 else np.inf
+
+def compute_rank_deficiency(X: np.ndarray) -> dict:
+    """计算矩阵的秩亏缺程度"""
+    rank = np.linalg.matrix_rank(X)
+    n_samples, n_features = X.shape
+    return {
+        'rank': rank,
+        'n_samples': n_samples,
+        'n_features': n_features,
+        'deficiency': n_features - rank,
+        'rank_ratio': rank / min(n_samples, n_features)
+    }
+
+def diagnose_multicollinearity(X: np.ndarray, threshold: float = 0.8) -> dict:
+    """诊断多重共线性"""
+    corr_matrix = np.corrcoef(X.T)
+    high_corr_pairs = []
+    
+    for i in range(X.shape[1]):
+        for j in range(i+1, X.shape[1]):
+            if abs(corr_matrix[i, j]) > threshold:
+                high_corr_pairs.append((i, j, corr_matrix[i, j]))
+    
+    return {
+        'max_correlation': np.max(np.abs(corr_matrix[np.triu_indices_from(corr_matrix, k=1)])),
+        'high_correlation_pairs': len(high_corr_pairs),
+        'pairs': high_corr_pairs[:10]
+    }

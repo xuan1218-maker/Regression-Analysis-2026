@@ -1,11 +1,18 @@
+# src/utils/models.py
 """
 模块：工具.模型
 用途：核心机器学习估计器
-包含：解析解普通最小二乘法、梯度下降普通最小二乘法
+包含：解析解普通最小二乘法、梯度下降普通最小二乘法、PCR、稳定性分析
 """
 
 import numpy as np
-from typing import List, Optional  # 添加这行导入
+from typing import List, Optional, Dict, Tuple
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression, LassoCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
 
 class AnalyticalOLS:
     """解析解普通最小二乘法"""
@@ -143,21 +150,212 @@ class GradientDescentOLS:
         if sst == 0:
             return 0
         return 1 - sse / sst
+
+
+class PCR:
+    """
+    主成分回归 (Principal Component Regression)
     
+    流程：标准化 -> PCA -> 保留前k个主成分 -> 线性回归
+    """
+    
+    def __init__(self, n_components: int = None, variance_ratio: float = None):
+        """
+        参数:
+            n_components: 保留的主成分个数
+            variance_ratio: 累计解释方差比例（与n_components二选一）
+        """
+        self.n_components = n_components
+        self.variance_ratio = variance_ratio
+        self.scaler = StandardScaler()
+        self.pca = None
+        self.regressor = LinearRegression()
+        self._is_fitted = False
+        
+    def fit(self, X: np.ndarray, y: np.ndarray) -> 'PCR':
+        X_scaled = self.scaler.fit_transform(X)
+        
+        if self.variance_ratio is not None:
+            self.pca = PCA(n_components=self.variance_ratio)
+        else:
+            self.pca = PCA(n_components=self.n_components)
+        
+        Z = self.pca.fit_transform(X_scaled)
+        self.regressor.fit(Z, y)
+        self._is_fitted = True
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if not self._is_fitted:
+            raise RuntimeError("请先调用 fit()")
+        X_scaled = self.scaler.transform(X)
+        Z = self.pca.transform(X_scaled)
+        return self.regressor.predict(Z)
+    
+    def get_original_coefficients(self) -> np.ndarray:
+        """
+        获取原始空间中的系数（近似）
+        返回: beta_original = V @ beta_pc
+        """
+        if not self._is_fitted:
+            raise RuntimeError("请先调用 fit()")
+        V = self.pca.components_.T
+        beta_pc = self.regressor.coef_
+        return V @ beta_pc
+    
+    def get_explained_variance_ratio(self) -> np.ndarray:
+        return self.pca.explained_variance_ratio_
+    
+    def get_cumulative_variance_ratio(self) -> np.ndarray:
+        return np.cumsum(self.pca.explained_variance_ratio_)
+    
+    def select_components_by_variance(self, X: np.ndarray, target_ratio: float = 0.9) -> int:
+        """根据目标解释方差比例选择主成分个数"""
+        X_scaled = self.scaler.fit_transform(X)
+        pca_temp = PCA()
+        pca_temp.fit(X_scaled)
+        cumsum = np.cumsum(pca_temp.explained_variance_ratio_)
+        n = np.argmax(cumsum >= target_ratio) + 1
+        return n
 
 
-# 在 utils/models.py 末尾添加以下内容
+class CoefficientStabilityAnalyzer:
+    """系数稳定性分析器"""
+    
+    def __init__(self, model_class, model_params: dict = None, n_splits: int = 50, test_size: float = 0.3):
+        """
+        参数:
+            model_class: 模型类（如 LinearRegression, LassoCV, PCR）
+            model_params: 模型参数字典
+            n_splits: 随机切分次数
+            test_size: 测试集比例
+        """
+        self.model_class = model_class
+        self.model_params = model_params or {}
+        self.n_splits = n_splits
+        self.test_size = test_size
+        
+    def analyze(self, X: np.ndarray, y: np.ndarray, random_seed_base: int = 0) -> Dict:
+        """
+        分析模型在不同随机切分下的稳定性
+        
+        返回:
+            dict: 包含系数矩阵、误差记录、稳定性指标
+        """
+        n_features = X.shape[1]
+        coeffs_history = []
+        train_errors = []
+        test_errors = []
+        
+        for split_id in range(self.n_splits):
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=self.test_size, random_state=random_seed_base + split_id
+            )
+            
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            
+            model = self.model_class(**self.model_params)
+            
+            if self.model_class.__name__ == 'PCR':
+                model.fit(X_train_scaled, y_train)
+                coeffs = model.get_original_coefficients()
+            else:
+                model.fit(X_train_scaled, y_train)
+                coeffs = model.coef_
+            
+            if len(coeffs) == n_features:
+                coeffs_history.append(coeffs)
+            
+            y_train_pred = model.predict(X_train_scaled)
+            y_test_pred = model.predict(X_test_scaled)
+            
+            train_errors.append(np.sqrt(mean_squared_error(y_train, y_train_pred)))
+            test_errors.append(np.sqrt(mean_squared_error(y_test, y_test_pred)))
+        
+        coeffs_array = np.array(coeffs_history)
+        
+        return {
+            'coeffs': coeffs_array,
+            'coeff_mean': np.mean(coeffs_array, axis=0) if len(coeffs_array) > 0 else np.array([]),
+            'coeff_std': np.std(coeffs_array, axis=0) if len(coeffs_array) > 0 else np.array([]),
+            'train_rmse_mean': np.mean(train_errors),
+            'train_rmse_std': np.std(train_errors),
+            'test_rmse_mean': np.mean(test_errors),
+            'test_rmse_std': np.std(test_errors)
+        }
+    
+    def get_stability_score(self, X: np.ndarray, y: np.ndarray) -> float:
+        """计算稳定性分数（系数标准差的平均值，越小越稳定）"""
+        results = self.analyze(X, y)
+        if len(results['coeff_std']) > 0:
+            return np.mean(results['coeff_std'])
+        return np.inf
+
+
+class LassoPCRComparator:
+    """Lasso与PCR比较器"""
+    
+    def __init__(self, cv_folds: int = 5):
+        self.cv_folds = cv_folds
+        self.results = {}
+    
+    def compare(self, X_train: np.ndarray, X_test: np.ndarray, 
+                y_train: np.ndarray, y_test: np.ndarray,
+                pcr_components: int = 10) -> Dict:
+        """
+        比较Lasso和PCR在给定数据上的表现
+        """
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        
+        # Lasso
+        lasso = LassoCV(cv=self.cv_folds, random_state=42, max_iter=10000)
+        lasso.fit(X_train_scaled, y_train)
+        y_pred_lasso = lasso.predict(X_test_scaled)
+        
+        # PCR
+        pcr = PCR(n_components=pcr_components)
+        pcr.fit(X_train_scaled, y_train)
+        y_pred_pcr = pcr.predict(X_test_scaled)
+        
+        self.results = {
+            'Lasso': {
+                'test_rmse': np.sqrt(mean_squared_error(y_test, y_pred_lasso)),
+                'test_mae': np.mean(np.abs(y_test - y_pred_lasso)),
+                'n_nonzero': np.sum(np.abs(lasso.coef_) > 1e-6),
+                'alpha': lasso.alpha_,
+                'predictions': y_pred_lasso
+            },
+            'PCR': {
+                'test_rmse': np.sqrt(mean_squared_error(y_test, y_pred_pcr)),
+                'test_mae': np.mean(np.abs(y_test - y_pred_pcr)),
+                'n_components': pcr_components,
+                'predictions': y_pred_pcr
+            }
+        }
+        
+        return self.results
+    
+    def print_comparison(self):
+        """打印比较结果"""
+        print("\n" + "="*50)
+        print("Lasso vs PCR 比较结果")
+        print("="*50)
+        print(f"{'指标':<20} {'Lasso':<20} {'PCR':<20}")
+        print("-"*60)
+        print(f"{'Test RMSE':<20} {self.results['Lasso']['test_rmse']:<20.4f} {self.results['PCR']['test_rmse']:<20.4f}")
+        print(f"{'Test MAE':<20} {self.results['Lasso']['test_mae']:<20.4f} {self.results['PCR']['test_mae']:<20.4f}")
+        print(f"{'模型复杂度':<20} {self.results['Lasso']['n_nonzero']:<20} {self.results['PCR']['n_components']:<20}")
+        print("="*50)
+
 
 class ForwardSelector:
     """前向选择 - 基于交叉验证的特征选择"""
     
     def __init__(self, cv_folds: int = 5, scoring: str = 'neg_mean_squared_error', max_features: int = None):
-        """
-        参数:
-            cv_folds: 交叉验证折数
-            scoring: 评估指标
-            max_features: 最多选择的特征数
-        """
         self.cv_folds = cv_folds
         self.scoring = scoring
         self.max_features = max_features
@@ -166,17 +364,6 @@ class ForwardSelector:
         self.cv_scores_ = []
         
     def select(self, X: np.ndarray, y: np.ndarray, feature_names: List[str] = None) -> List[int]:
-        """
-        执行前向选择
-        
-        参数:
-            X: 特征矩阵 (n_samples, n_features)
-            y: 目标变量 (n_samples,)
-            feature_names: 特征名称列表
-            
-        返回:
-            selected_indices: 被选中的特征索引列表
-        """
         from sklearn.linear_model import LinearRegression
         from sklearn.model_selection import cross_val_score
         
@@ -231,12 +418,6 @@ class BackwardEliminator:
     """后向剔除 - 基于交叉验证的特征选择"""
     
     def __init__(self, cv_folds: int = 5, scoring: str = 'neg_mean_squared_error', min_features: int = 1):
-        """
-        参数:
-            cv_folds: 交叉验证折数
-            scoring: 评估指标
-            min_features: 最少保留的特征数
-        """
         self.cv_folds = cv_folds
         self.scoring = scoring
         self.min_features = min_features
@@ -245,17 +426,6 @@ class BackwardEliminator:
         self.cv_scores_ = []
         
     def select(self, X: np.ndarray, y: np.ndarray, feature_names: List[str] = None) -> List[int]:
-        """
-        执行后向剔除
-        
-        参数:
-            X: 特征矩阵 (n_samples, n_features)
-            y: 目标变量 (n_samples,)
-            feature_names: 特征名称列表
-            
-        返回:
-            selected_indices: 被选中的特征索引列表
-        """
         from sklearn.linear_model import LinearRegression
         from sklearn.model_selection import cross_val_score
         
@@ -265,7 +435,6 @@ class BackwardEliminator:
         
         print(f"开始后向剔除，共{n_features}个特征，最少保留{self.min_features}个...")
         
-        # 先计算全模型的分数
         model = LinearRegression()
         full_score = np.mean(cross_val_score(model, X, y, cv=self.cv_folds, scoring=self.scoring))
         self.cv_scores_.append(full_score)
@@ -289,7 +458,6 @@ class BackwardEliminator:
                     worst_score = avg_score
                     worst_feature = feature
             
-            # 移除最差特征
             if worst_feature is not None:
                 current_features.remove(worst_feature)
                 self.cv_scores_.append(worst_score)
