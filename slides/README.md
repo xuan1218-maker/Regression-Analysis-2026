@@ -131,7 +131,7 @@ uv run --directory slides python -m slide_builder build week13/week13_class.ipyn
 ```bash
 uv run --directory slides jupytext --sync week12_new/week12_class.py
 uv run --directory slides jupyter nbconvert --to notebook --execute --inplace week12_new/week12_class.ipynb
-uv run --directory slides python -m slide_builder build week12_new/week12_class.ipynb
+uv run --directory slides python -m slide_builder build final/note_gemini_slides.ipynb
 ```
 
 ### 学生
