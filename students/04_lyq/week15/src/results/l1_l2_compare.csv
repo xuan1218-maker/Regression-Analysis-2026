@@ -1,0 +1,3 @@
+penalty,accuracy,recall,roc_auc,log_loss,zero_coeff_count
+L1,0.9056,0.898,0.9557,0.2841,13
+L2,0.8944,0.898,0.9601,0.2791,0
