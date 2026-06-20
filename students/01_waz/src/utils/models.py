@@ -393,3 +393,81 @@ def cv_pcr_scores(
             scores[k].append(calculate_rmse(y_val, pred))
 
     return {k: float(np.mean(v)) for k, v in scores.items()}
+
+
+# ---------------------------------------------------------------------------
+# Week 15: Custom Logistic Regression (gradient-descent)
+# ---------------------------------------------------------------------------
+
+class CustomLogisticRegression:
+    """Binary logistic regression trained via gradient descent on log loss.
+
+    Provides a from-scratch implementation for pedagogical purposes.
+    Mirrors the sklearn interface: fit, predict, predict_proba, score.
+    """
+
+    def __init__(
+        self,
+        learning_rate: float = 0.1,
+        max_iter: int = 2000,
+        tol: float = 1e-6,
+        random_state: int = 42,
+    ):
+        self.learning_rate = learning_rate
+        self.max_iter = max_iter
+        self.tol = tol
+        self.random_state = random_state
+        self.coef_ = None
+        self.intercept_ = None
+        self.loss_history_: list[float] = []
+
+    def _sigmoid(self, z: np.ndarray) -> np.ndarray:
+        return 1.0 / (1.0 + np.exp(-np.clip(z, -500, 500)))
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "CustomLogisticRegression":
+        X_arr = np.asarray(X, dtype=float)
+        y_arr = np.asarray(y, dtype=float).ravel()
+        n_samples, n_features = X_arr.shape
+
+        rng = np.random.default_rng(self.random_state)
+        self.coef_ = rng.normal(0, 0.01, size=n_features)
+        self.intercept_ = 0.0
+        self.loss_history_ = []
+
+        for iteration in range(self.max_iter):
+            z = X_arr @ self.coef_ + self.intercept_
+            p = self._sigmoid(z)
+            error = p - y_arr
+
+            grad_coef = (X_arr.T @ error) / n_samples
+            grad_intercept = np.mean(error)
+
+            self.coef_ -= self.learning_rate * grad_coef
+            self.intercept_ -= self.learning_rate * grad_intercept
+
+            eps = 1e-15
+            loss = -np.mean(
+                y_arr * np.log(np.clip(p, eps, 1 - eps))
+                + (1 - y_arr) * np.log(np.clip(1 - p, eps, 1 - eps))
+            )
+            self.loss_history_.append(float(loss))
+
+            if iteration > 0 and abs(self.loss_history_[-1] - self.loss_history_[-2]) < self.tol:
+                break
+
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if self.coef_ is None:
+            raise RuntimeError("CustomLogisticRegression: must call fit() before predict_proba()")
+        X_arr = np.asarray(X, dtype=float)
+        z = X_arr @ self.coef_ + self.intercept_
+        return self._sigmoid(z)
+
+    def predict(self, X: np.ndarray, threshold: float = 0.5) -> np.ndarray:
+        proba = self.predict_proba(X)
+        return (proba >= threshold).astype(int)
+
+    def score(self, X: np.ndarray, y: np.ndarray) -> float:
+        from .metrics import accuracy
+        return accuracy(y, self.predict(X))
