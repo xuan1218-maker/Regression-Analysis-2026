@@ -7,11 +7,13 @@ import numpy as np
 from scipy import stats
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
-from typing import Dict
 
 
+# =============================================================================
+# 1. Analytical OLS（解析解）
+# =============================================================================
 class AnalyticalOLS:
-    """解析解 OLS 回归模型"""
+    """Analytical Ordinary Least Squares (stable version)"""
 
     def __init__(self, fit_intercept: bool = True):
         self.fit_intercept = fit_intercept
@@ -26,31 +28,36 @@ class AnalyticalOLS:
     def _add_intercept(self, X: np.ndarray) -> np.ndarray:
         if not self.fit_intercept:
             return X
-        n = X.shape[0]
-        return np.column_stack([np.ones(n), X])
+        return np.column_stack([np.ones(X.shape[0]), X])
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         X_design = self._add_intercept(X)
         self._X_design = X_design
+
         n, p = X_design.shape
 
         XtX = X_design.T @ X_design
-        XtX_inv = np.linalg.inv(XtX)
+
+        # ✅ stable inverse (fix numerical instability)
+        XtX_inv = np.linalg.pinv(XtX)
+
         XtY = X_design.T @ y
         self.coef_ = XtX_inv @ XtY
 
         self.fitted_values_ = X_design @ self.coef_
         self.residuals_ = y - self.fitted_values_
 
-        RSS = np.sum(self.residuals_**2)
+        RSS = np.sum(self.residuals_ ** 2)
         self.df_resid_ = n - p
         self.sigma2_ = RSS / self.df_resid_
+
         self.cov_matrix_ = self.sigma2_ * XtX_inv
+
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         if self.coef_ is None:
-            raise RuntimeError("必须先调用 fit()")
+            raise RuntimeError("Must call fit() first")
         X_design = self._add_intercept(X)
         return X_design @ self.coef_
 
@@ -60,40 +67,36 @@ class AnalyticalOLS:
         SST = np.sum((y - np.mean(y)) ** 2)
         return 1 - SSE / SST
 
-    def f_test(self, C: np.ndarray, d: np.ndarray) -> Dict[str, float]:
+    def f_test(self, C: np.ndarray, d: np.ndarray):
         if self.coef_ is None:
-            raise RuntimeError("必须先调用 fit()")
+            raise RuntimeError("Must call fit() first")
+
         C = np.asarray(C)
         d = np.asarray(d).reshape(-1, 1)
         q = C.shape[0]
 
-        C_beta = C @ self.coef_.reshape(-1, 1)
-        diff = C_beta - d
+        diff = C @ self.coef_.reshape(-1, 1) - d
 
-        XtX = self._X_design.T @ self._X_design
-        XtX_inv = np.linalg.inv(XtX)
+        XtX_inv = np.linalg.pinv(self._X_design.T @ self._X_design)
 
-        C_XtX_inv_Ct = C @ XtX_inv @ C.T
-        C_XtX_inv_Ct_inv = np.linalg.inv(C_XtX_inv_Ct)
+        middle = C @ XtX_inv @ C.T
+        middle_inv = np.linalg.pinv(middle)
 
-        quad_form = diff.T @ C_XtX_inv_Ct_inv @ diff
-        f_stat = quad_form.item() / (q * self.sigma2_)
+        f_stat = (diff.T @ middle_inv @ diff).item() / (q * self.sigma2_)
         p_value = 1 - stats.f.cdf(f_stat, q, self.df_resid_)
+
         return {"f_stat": f_stat, "p_value": p_value}
 
 
+# =============================================================================
+# 2. Gradient Descent OLS
+# =============================================================================
 class GradientDescentOLS:
-    """梯度下降 OLS 回归模型"""
 
-    def __init__(
-        self,
-        learning_rate: float = 0.01,
-        tol: float = 1e-5,
-        max_iter: int = 1000,
-        gd_type: str = "full_batch",
-        batch_fraction: float = 0.1,
-        fit_intercept: bool = True,
-    ):
+    def __init__(self, learning_rate=0.01, tol=1e-5, max_iter=1000,
+                 gd_type="full_batch", batch_fraction=0.1,
+                 fit_intercept=True):
+
         self.learning_rate = learning_rate
         self.tol = tol
         self.max_iter = max_iter
@@ -103,87 +106,57 @@ class GradientDescentOLS:
 
         self.coef_ = None
         self.loss_history_ = []
-        self._X_design = None
 
-    def _add_intercept(self, X: np.ndarray) -> np.ndarray:
+    def _add_intercept(self, X):
         if not self.fit_intercept:
             return X
+        return np.column_stack([np.ones(X.shape[0]), X])
+
+    def _mse(self, X, y):
+        return np.mean((y - X @ self.coef_) ** 2)
+
+    def _grad(self, X, y):
         n = X.shape[0]
-        return np.column_stack([np.ones(n), X])
+        return (2 / n) * (X.T @ (X @ self.coef_ - y))
 
-    def _compute_mse(self, X: np.ndarray, y: np.ndarray) -> float:
-        y_pred = X @ self.coef_
-        return np.mean((y - y_pred) ** 2)
+    def fit(self, X, y):
 
-    def _compute_gradient(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        n = X.shape[0]
-        y_pred = X @ self.coef_
-        error = y_pred - y
-        return (2 / n) * (X.T @ error)
+        X = self._add_intercept(X)
+        n, p = X.shape
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
-        """使用梯度下降拟合模型"""
-        # 添加截距
-        X_design = self._add_intercept(X)
-        n_samples, n_features = X_design.shape
-
-        # 初始化系数为 0
-        self.coef_ = np.zeros(n_features)
+        self.coef_ = np.zeros(p)
         self.loss_history_ = []
 
-        # 确定 batch 大小
-        if self.gd_type == "full_batch":
-            batch_size = n_samples
-        elif self.gd_type == "mini_batch":
-            batch_size = max(1, int(n_samples * self.batch_fraction))
-        else:
-            raise ValueError("gd_type 必须是 'full_batch' 或 'mini_batch'")
-
-        print(f"开始训练: {self.gd_type}, batch_size={batch_size}")
-
-        # 梯度下降迭代
-        for epoch in range(self.max_iter):
-            # 1. 采样（如果是 mini_batch）
-            if self.gd_type == "mini_batch":
-                # 随机采样
-                indices = np.random.choice(n_samples, size=batch_size, replace=False)
-                X_batch = X_design[indices]
-                y_batch = y[indices]
-            else:
-                X_batch = X_design
-                y_batch = y
-
-            # 2. 计算梯度
-            gradient = self._compute_gradient(X_batch, y_batch)
-
-            # 3. 更新回归系数
-            self.coef_ -= self.learning_rate * gradient
-
-            # 4. 记录本轮 loss（使用全量数据）
-            current_loss = self._compute_mse(X_design, y)
-            self.loss_history_.append(current_loss)
-
-            # 5. 检查收敛
-            if epoch > 50:
-                rel_loss_change = abs(
-                    self.loss_history_[-1] - self.loss_history_[-2]
-                ) / (abs(self.loss_history_[-2]) + 1e-8)
-                if rel_loss_change < self.tol:
-                    print(f"收敛于第 {epoch} 轮，loss 相对变化 = {rel_loss_change:.2e}")
-                    break
-
-        print(
-            f"训练完成: 共 {len(self.loss_history_)} 轮，最终 loss = {self.loss_history_[-1]:.6f}"
+        batch_size = n if self.gd_type == "full_batch" else max(
+            1, int(n * self.batch_fraction)
         )
+
+        prev_loss = np.inf
+
+        for i in range(self.max_iter):
+
+            if self.gd_type == "mini_batch":
+                idx = np.random.choice(n, batch_size, replace=False)
+                Xb, yb = X[idx], y[idx]
+            else:
+                Xb, yb = X, y
+
+            grad = self._grad(Xb, yb)
+            self.coef_ -= self.learning_rate * grad
+
+            loss = self._mse(X, y)
+            self.loss_history_.append(loss)
+
+            if abs(prev_loss - loss) / (prev_loss + 1e-8) < self.tol:
+                break
+            prev_loss = loss
+
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        if self.coef_ is None:
-            raise RuntimeError("必须先调用 fit()")
-        X_design = self._add_intercept(X)
-        return X_design @ self.coef_
+    def predict(self, X):
+        return self._add_intercept(X) @ self.coef_
 
-    def score(self, X: np.ndarray, y: np.ndarray) -> float:
+    def score(self, X, y):
         y_pred = self.predict(X)
         SSE = np.sum((y - y_pred) ** 2)
         SST = np.sum((y - np.mean(y)) ** 2)
@@ -191,115 +164,91 @@ class GradientDescentOLS:
 
 
 # =============================================================================
-# Ridge 岭回归
-# 作用：解决多重共线性 → 矩阵永不奇异 → 不删特征 → 不报错
+# 3. Ridge Regression
 # =============================================================================
 class RidgeRegression:
-    """
-    手写 Ridge 岭回归（解析解）
-    解决：共线性导致 XtX 奇异、无法求逆的问题
-    核心：在 XtX 上加入 alpha * 单位矩阵，保证可逆
-    """
 
-    def __init__(self, alpha: float = 1.0, fit_intercept: bool = True):
-        """
-        :param alpha: 正则化强度（越大越强）
-        :param fit_intercept: 是否拟合截距
-        """
+    def __init__(self, alpha=1.0, fit_intercept=True):
         self.alpha = alpha
         self.fit_intercept = fit_intercept
-        self.coef_ = None  # 系数
-        self.intercept_ = None  # 截距
+        self.coef_ = None
+        self.intercept_ = None
 
-    def _add_intercept(self, X: np.ndarray) -> np.ndarray:
-        """和 OLS 保持一致：给 X 加一列 1"""
+    def _add_intercept(self, X):
         if not self.fit_intercept:
             return X
-        n_samples = X.shape[0]
-        return np.hstack([np.ones((n_samples, 1)), X])
+        return np.column_stack([np.ones(X.shape[0]), X])
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
-        """
-        拟合 Ridge 模型
-        β = (XᵀX + αI)⁻¹ Xᵀy
-        """
-        # 1. 给 X 加截距（如果需要）
-        X_design = self._add_intercept(X)
-        n_samples, n_features = X_design.shape
+    def fit(self, X, y):
 
-        # 2. 计算 XᵀX
-        XtX = X_design.T @ X_design
+        Xd = self._add_intercept(X)
+        XtX = Xd.T @ Xd
 
-        # 3. 核心：Ridge 正则项 → 加 alpha * 单位矩阵
-        # 这一步让矩阵永远可逆，解决共线性报错！
-        identity_matrix = np.eye(n_features)
-        XtX_regularized = XtX + self.alpha * identity_matrix
+        # stable inverse
+        XtX_inv = np.linalg.pinv(XtX + self.alpha * np.eye(Xd.shape[1]))
 
-        # 4. 求逆 + 计算系数
-        XtX_inv = np.linalg.inv(XtX_regularized)
-        XtY = X_design.T @ y
-        beta = XtX_inv @ XtY
+        beta = XtX_inv @ (Xd.T @ y)
 
-        # 5. 拆分截距和系数
         if self.fit_intercept:
             self.intercept_ = beta[0]
             self.coef_ = beta[1:]
         else:
-            self.intercept_ = 0.0
+            self.intercept_ = 0
             self.coef_ = beta
 
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """预测"""
-        if self.coef_ is None:
-            raise RuntimeError("请先调用 fit()")
+    def predict(self, X):
         return X @ self.coef_ + self.intercept_
 
-    def score(self, X: np.ndarray, y: np.ndarray) -> float:
-        """计算 R²"""
+    def score(self, X, y):
         y_pred = self.predict(X)
-        ss_res = np.sum((y - y_pred) ** 2)
-        ss_tot = np.sum((y - np.mean(y)) ** 2)
-        return 1 - (ss_res / ss_tot)
+        return 1 - np.sum((y - y_pred) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
 
+# =============================================================================
+# 4. PCR Regression
+# =============================================================================
 class PCRRegressor:
-    """Principal Component Regression (PCR) 实现。"""
 
-    def __init__(self, n_components: int = 5):
+    def __init__(self, n_components=5):
         self.n_components = n_components
         self.pca = None
-        self.regressor = None
-        self.scaler_mean_ = None
-        self.scaler_scale_ = None
+        self.model = None
+        self.mean_ = None
+        self.std_ = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
-        self.scaler_mean_ = np.mean(X, axis=0)
-        self.scaler_scale_ = np.std(X, axis=0, ddof=1)
-        self.scaler_scale_[self.scaler_scale_ == 0] = 1.0
-        X_scaled = (X - self.scaler_mean_) / self.scaler_scale_
+    def fit(self, X, y):
+
+        self.mean_ = X.mean(axis=0)
+        self.std_ = X.std(axis=0, ddof=1)
+
+        self.std_[self.std_ < 1e-12] = 1.0
+
+        Xs = (X - self.mean_) / self.std_
 
         self.pca = PCA(n_components=self.n_components)
-        Z = self.pca.fit_transform(X_scaled)
-        self.regressor = LinearRegression().fit(Z, y)
+        Z = self.pca.fit_transform(Xs)
+
+        self.model = LinearRegression().fit(Z, y)
+
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        if self.pca is None or self.regressor is None:
-            raise RuntimeError("请先调用 fit()")
-        X_scaled = (X - self.scaler_mean_) / self.scaler_scale_
-        Z = self.pca.transform(X_scaled)
-        return self.regressor.predict(Z)
+    def predict(self, X):
+
+        Xs = (X - self.mean_) / self.std_
+        Z = self.pca.transform(Xs)
+
+        return self.model.predict(Z)
+
+    def score(self, X, y):
+        y_pred = self.predict(X)
+        return 1 - np.sum((y - y_pred) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     @property
     def explained_variance_ratio_(self):
-        if self.pca is None:
-            raise RuntimeError("请先调用 fit()")
         return self.pca.explained_variance_ratio_
 
     @property
     def coef_(self):
-        if self.pca is None or self.regressor is None:
-            raise RuntimeError("请先调用 fit()")
-        return self.pca.components_.T @ self.regressor.coef_
+        return self.pca.components_.T @ self.model.coef_

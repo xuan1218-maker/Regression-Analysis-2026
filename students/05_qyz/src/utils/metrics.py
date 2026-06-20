@@ -1,88 +1,51 @@
 """
-评估指标库 (Metrics Library)
-包含 RMSE, MAE, MAPE 的计算函数
+Metrics Library (Regression Evaluation Toolkit)
+
+包含：
+- RMSE
+- MAE
+- MAPE（稳定版）
 """
 
 import numpy as np
 
 
+def _to_array(y):
+    return np.asarray(y)
+
+
+# =========================
+# RMSE
+# =========================
 def calculate_rmse(y_true, y_pred):
-    """
-    计算均方根误差 (Root Mean Square Error)
+    y_true = _to_array(y_true)
+    y_pred = _to_array(y_pred)
 
-    RMSE = sqrt(mean((y_true - y_pred)^2))
-    对大误差敏感，常用于回归模型评估
-
-    Parameters:
-    -----------
-    y_true : array-like
-        真实值
-    y_pred : array-like
-        预测值
-
-    Returns:
-    --------
-    float : RMSE 值
-    """
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
     return np.sqrt(np.mean((y_true - y_pred) ** 2))
 
 
+# =========================
+# MAE
+# =========================
 def calculate_mae(y_true, y_pred):
-    """
-    计算平均绝对误差 (Mean Absolute Error)
+    y_true = _to_array(y_true)
+    y_pred = _to_array(y_pred)
 
-    MAE = mean(|y_true - y_pred|)
-    对异常值不敏感，更稳健
-
-    Parameters:
-    -----------
-    y_true : array-like
-        真实值
-    y_pred : array-like
-        预测值
-
-    Returns:
-    --------
-    float : MAE 值
-    """
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
     return np.mean(np.abs(y_true - y_pred))
 
 
-def calculate_mape(y_true, y_pred, epsilon=1e-10):
+# =========================
+# MAPE
+# =========================
+def calculate_mape(y_true, y_pred, epsilon=1e-8):
     """
-    计算平均绝对百分比误差 (Mean Absolute Percentage Error)
-
-    MAPE = mean(|(y_true - y_pred) / y_true|) * 100
-    以百分比形式表示预测误差，便于业务理解
-
-    Parameters:
-    -----------
-    y_true : array-like
-        真实值
-    y_pred : array-like
-        预测值
-    epsilon : float
-        极小值，防止除以零
-
-    Returns:
-    --------
-    float : MAPE 百分比值（例如 5.2 表示 5.2%）
-            如果所有真实值都为零，返回 inf
+    Robust MAPE:
+    避免 y_true=0 导致不稳定
     """
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
 
-    # 找出真实值不为零的位置
-    mask = y_true != 0
+    y_true = _to_array(y_true)
+    y_pred = _to_array(y_pred)
 
-    if not mask.any():
-        return float("inf")
+    denom = np.maximum(np.abs(y_true), epsilon)
 
-    # 计算百分比误差
-    percentage_error = np.abs((y_true[mask] - y_pred[mask]) / (y_true[mask] + epsilon))
-
-    return np.mean(percentage_error) * 100
+    return np.mean(np.abs((y_true - y_pred) / denom)) * 100
