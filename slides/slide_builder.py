@@ -13,6 +13,12 @@ import nbformat
 
 SLIDE_TAGS = {"slide", "sub-slide", "fragment", "skip"}
 VALID_SLIDE_TYPES = {"slide", "subslide", "fragment", "skip", "notes", "-"}
+TAG_TO_SLIDE_TYPE = {
+    "slide": "slide",
+    "sub-slide": "subslide",
+    "fragment": "fragment",
+    "skip": "skip",
+}
 REVEAL_WIDTH = 1280
 REVEAL_HEIGHT = 720
 SCRIPT_HTML_CSS = """
@@ -237,10 +243,48 @@ def resolve_output_dir(raw_output_dir: str | None, target: Path, slides_root: Pa
 
 
 def sync_notebook_pair(target: Path, slides_root: Path) -> Path:
-    run_command(["jupytext", "--sync", str(target.relative_to(slides_root))], slides_root)
     if target.suffix == ".ipynb":
+        # A human may edit the notebook directly. In that case the notebook is
+        # deliberately the source for this build: write it back to the paired
+        # Jupytext file instead of asking Jupytext to infer a direction from
+        # modification timestamps.
+        normalize_notebook_file_metadata(target)
+        run_command(
+            [
+                "jupytext",
+                "--to",
+                "py:percent",
+                str(target.relative_to(slides_root)),
+                "--output",
+                str(target.with_suffix(".py").relative_to(slides_root)),
+            ],
+            slides_root,
+        )
         return target
+
+    run_command(["jupytext", "--sync", str(target.relative_to(slides_root))], slides_root)
     return target.with_suffix(".ipynb")
+
+
+def normalize_notebook_file_metadata(ipynb_path: Path) -> None:
+    """Fill slideshow metadata implied by structural tags in notebook edits."""
+    notebook = nbformat.read(ipynb_path, as_version=4)
+    changed = False
+
+    for cell in notebook.cells:
+        tags = set(cell.metadata.get("tags", []))
+        implied_type = next(
+            (TAG_TO_SLIDE_TYPE[tag] for tag in TAG_TO_SLIDE_TYPE if tag in tags), None
+        )
+        if implied_type is None:
+            continue
+        slideshow = cell.metadata.setdefault("slideshow", {})
+        if slideshow.get("slide_type") != implied_type:
+            slideshow["slide_type"] = implied_type
+            changed = True
+
+    if changed:
+        nbformat.write(notebook, ipynb_path)
 
 
 def execute_notebook(ipynb_path: Path, slides_root: Path) -> None:
@@ -454,9 +498,15 @@ def validate_notebook(notebook: nbformat.NotebookNode) -> list[Issue]:
 
 def normalize_notebook_for_build(notebook: nbformat.NotebookNode) -> None:
     for cell in notebook.cells:
+        tags = list(cell.metadata.get("tags", []))
+        implied_type = next(
+            (TAG_TO_SLIDE_TYPE[tag] for tag in TAG_TO_SLIDE_TYPE if tag in tags), None
+        )
+        if implied_type is not None:
+            cell.metadata.setdefault("slideshow", {})["slide_type"] = implied_type
+
         if cell.cell_type != "code":
             continue
-        tags = list(cell.metadata.get("tags", []))
         if "skip" in tags or "hide-input" in tags:
             continue
         outputs = cell.get("outputs", [])
